@@ -475,3 +475,163 @@ tbody tr:last-child td{border-bottom:0}
     white-space:nowrap;
   }
 }
+
+/* v4.2: manual payment checklist + responsive recurring-payment cards */
+.payment-center-head,
+.recurring-list-head{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:12px;
+  margin:4px 0 12px;
+}
+.recurring-list-head{
+  margin-top:22px;
+  padding-top:18px;
+  border-top:1px solid var(--border);
+}
+.payment-checklist-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:10px;
+}
+.payment-check-card{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:14px;
+  align-items:center;
+  min-width:0;
+  padding:14px;
+  border:1px solid var(--border);
+  border-radius:14px;
+  background:var(--surface-2);
+}
+.payment-check-card.is-paid{
+  border-color:color-mix(in srgb,var(--good) 55%,var(--border));
+  background:color-mix(in srgb,var(--good) 8%,var(--surface-2));
+}
+.payment-check-main{min-width:0}
+.payment-check-title{display:flex;align-items:center;gap:7px;flex-wrap:wrap;min-width:0}
+.payment-check-title>strong{font-size:15px;line-height:1.3;overflow-wrap:anywhere}
+.payment-check-main>span{display:block;color:var(--muted);font-size:12px;line-height:1.45;margin-top:4px}
+.payment-check-main>small{display:block;color:var(--good);font-size:11px;font-weight:800;margin-top:5px}
+.payment-check-side{display:grid;justify-items:end;gap:7px;min-width:116px}
+.payment-check-side>strong{font-size:16px;font-variant-numeric:tabular-nums}
+.payment-toggle,
+.bill-paid-control{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  min-height:42px;
+  padding:8px 10px;
+  border:1px solid var(--border);
+  border-radius:11px;
+  background:var(--surface);
+  color:var(--text);
+  font-size:12px;
+  font-weight:800;
+  cursor:pointer;
+}
+.payment-toggle input,
+.bill-paid-control input{
+  width:20px;
+  height:20px;
+  min-height:20px;
+  margin:0;
+  flex:0 0 auto;
+  accent-color:var(--good);
+}
+.status-pill.paid{border-color:var(--good);color:var(--good)}
+.status-pill.overdue{border-color:var(--bad);color:var(--bad)}
+.status-pill.upcoming,.status-pill.due{border-color:var(--warn);color:var(--warn)}
+
+.bill-card-list{display:grid;gap:10px}
+.bill-card{
+  display:grid;
+  gap:13px;
+  min-width:0;
+  padding:15px;
+  border:1px solid var(--border);
+  border-radius:15px;
+  background:var(--surface-2);
+}
+.bill-card.is-paid{border-color:color-mix(in srgb,var(--good) 45%,var(--border))}
+.bill-card.is-canceled{opacity:.68}
+.bill-card-top{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:14px;
+  min-width:0;
+}
+.bill-card-heading{display:flex;align-items:flex-start;gap:10px;min-width:0}
+.bill-card-heading>.dot{margin-top:6px}
+.bill-card-heading>div{min-width:0}
+.bill-card-heading strong{
+  display:block;
+  font-size:17px;
+  line-height:1.3;
+  overflow-wrap:anywhere;
+}
+.bill-card-badges{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.bill-card-badges .status-pill{margin-left:0}
+.bill-card-amount{
+  font-size:18px;
+  font-weight:900;
+  font-variant-numeric:tabular-nums;
+  white-space:nowrap;
+}
+.bill-card-details{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:8px;
+}
+.bill-card-details>div{
+  min-width:0;
+  padding:10px;
+  border:1px solid var(--border);
+  border-radius:11px;
+  background:var(--surface);
+}
+.bill-card-details span{
+  display:block;
+  color:var(--muted);
+  font-size:10px;
+  font-weight:800;
+  text-transform:uppercase;
+  letter-spacing:.04em;
+}
+.bill-card-details strong{display:block;font-size:13px;line-height:1.35;margin-top:4px;overflow-wrap:anywhere}
+.bill-paid-control{justify-content:flex-start;padding:10px 12px;min-height:54px}
+.bill-paid-control>span{min-width:0}
+.bill-paid-control strong{display:block;font-size:13px}
+.bill-paid-control small{display:block;color:var(--muted);font-size:11px;font-weight:600;margin-top:2px;line-height:1.35}
+.bill-card-actions{display:flex;gap:8px;flex-wrap:wrap}
+.bill-card-actions .secondary,
+.bill-card-actions .danger{min-width:90px}
+.recurring-bill-form{padding-top:18px;border-top:1px solid var(--border)}
+.calendar-event.paid{border-color:color-mix(in srgb,var(--good) 60%,var(--border));background:color-mix(in srgb,var(--good) 16%,var(--surface));opacity:.82}
+
+@media(max-width:850px){
+  .payment-checklist-grid{grid-template-columns:1fr}
+  .bill-card-details{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+
+@media(max-width:560px){
+  .payment-center-head,.recurring-list-head{display:block}
+  .payment-center-head .chip{margin-top:8px}
+  .payment-check-card{grid-template-columns:1fr;gap:10px;padding:13px}
+  .payment-check-side{display:flex;justify-content:space-between;align-items:center;width:100%;min-width:0}
+  .payment-toggle{min-height:44px}
+  .bill-card{padding:14px;gap:12px}
+  .bill-card-top{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px}
+  .bill-card-heading strong{font-size:18px;overflow-wrap:normal;word-break:normal}
+  .bill-card-amount{font-size:18px}
+  .bill-card-details{grid-template-columns:1fr}
+  .bill-card-details>div{padding:9px 10px}
+  .bill-paid-control{width:100%;min-height:58px}
+  .bill-card-actions{display:grid;grid-template-columns:1fr 1fr}
+  .bill-card-actions .secondary,.bill-card-actions .danger{width:100%;min-width:0;min-height:46px}
+  .bill-card-actions .danger:last-child:nth-child(3){grid-column:1 / -1}
+  .recurring-bill-form .primary{width:100%;min-height:48px}
+}

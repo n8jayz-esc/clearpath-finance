@@ -56,6 +56,10 @@
     merged.weeklyIncome = Number(merged.weeklyIncome) || Math.round((Number(merged.monthlyIncome)||3640)*12/52);
     merged.paychecks = Array.isArray(merged.paychecks) ? merged.paychecks : [];
     merged.transactions = Array.isArray(merged.transactions) ? merged.transactions : [];
+    merged.debts = (Array.isArray(merged.debts) ? merged.debts : structuredClone(starter.debts)).map(d=>({
+      ...d,
+      minimumPayments:Array.isArray(d.minimumPayments) ? d.minimumPayments.filter(x=>x && x.period).map(x=>({period:String(x.period),paidAt:x.paidAt || ""})) : []
+    }));
     merged.bills = (Array.isArray(merged.bills) ? merged.bills : []).map(b=>({
       id:b.id || uid(),
       name:b.name || "Recurring payment",
@@ -63,7 +67,8 @@
       frequency:b.frequency === "yearly" ? "yearly" : "monthly",
       dueDate:b.dueDate || nextDueFromDay(b.day || 1),
       status:b.status === "canceled" ? "canceled" : "active",
-      lastPaid:b.lastPaid || ""
+      lastPaid:b.lastPaid || "",
+      payments:Array.isArray(b.payments) ? b.payments.filter(x=>x && x.dueDate).map(x=>({dueDate:String(x.dueDate),paidAt:x.paidAt || ""})) : []
     }));
     merged.budget = (Array.isArray(merged.budget) ? merged.budget : structuredClone(starter.budget)).map(b=>{
       const monthlyIncome = Math.max(1,Number(merged.monthlyIncome)||3640);
@@ -296,12 +301,12 @@
 
   function renderDaily(){
     const activeBills=state.bills.filter(b=>b.status!=="canceled");
-    const nextBills=[...activeBills].filter(b=>b.dueDate).sort((a,b)=>a.dueDate.localeCompare(b.dueDate)).slice(0,3);
+    const nextBills=activeBills.map(b=>({bill:b,due:nextBillOccurrence(b)})).filter(x=>x.due).sort((a,b)=>a.due-b.due).slice(0,3);
     const target=activeSnowball();
     const emergencyLeft=Math.max(0,state.emergencyTarget-state.emergency);
     const tasks=[
       ["Review transactions",`${state.transactions.length} transaction${state.transactions.length===1?"":"s"} tracked`],
-      ["Check recurring bills",nextBills.length ? `Next: ${nextBills[0].name} ${formatDueDate(nextBills[0].dueDate)}` : "No active recurring bills"],
+      ["Check recurring bills",nextBills.length ? `Next: ${nextBills[0].bill.name} ${formatDueDate(occurrenceISO(nextBills[0].due))}` : "No active recurring bills"],
       [emergencyLeft>0 ? "Build starter fund" : "Make snowball payment", emergencyLeft>0 ? `${money(emergencyLeft)} left to reach goal` : target ? `Current target: ${target.name}` : "No remaining debt"]
     ];
     $("#dailyChecklist").innerHTML = tasks.map(t=>`<div class="item"><span class="dot"></span><div class="item-main"><strong>${escapeHtml(t[0])}</strong><span>${escapeHtml(t[1])}</span></div></div>`).join("");
@@ -323,11 +328,12 @@
     const daysInMonth=new Date(year,monthIndex+1,0).getDate();
     state.debts.filter(d=>d.balance>0 && Number(d.min)>0 && Number(d.dueDay)>0).forEach(d=>{
       const day=Math.min(clamp(d.dueDay,1,31),daysInMonth);
-      events.push({day,type:"debt",name:d.name,amount:Number(d.min)||0,detail:"minimum"});
+      const paid=!!debtPaymentFor(d,monthKey(year,monthIndex));
+      events.push({day,type:"debt",name:d.name,amount:Number(d.min)||0,detail:paid?"minimum · paid":"minimum",paid});
     });
     state.bills.forEach(b=>{
       const due=projectedBillDateForMonth(b,year,monthIndex);
-      if(due) events.push({day:due.getDate(),type:"bill",name:b.name,amount:Number(b.amount)||0,detail:b.frequency === "yearly" ? "yearly" : "monthly"});
+      if(due){ const dueISO=occurrenceISO(due); const paid=!!billPaymentFor(b,dueISO); events.push({day:due.getDate(),type:"bill",name:b.name,amount:Number(b.amount)||0,detail:`${b.frequency === "yearly" ? "yearly" : "monthly"}${paid?" · paid":""}`,paid}); }
     });
     return events;
   }
@@ -352,7 +358,7 @@
       const cellDate=new Date(cellYear,cellMonth,cellDay,12,0,0);
       const isToday=cellDate.getFullYear()===today.getFullYear() && cellDate.getMonth()===today.getMonth() && cellDate.getDate()===today.getDate();
       const dayEvents=outside ? [] : events.filter(e=>e.day===cellDay);
-      cells.push(`<div class="calendar-day${outside?" outside":""}${isToday?" today":""}"><div class="calendar-day-number"><span>${cellDay}</span></div><div class="calendar-events">${dayEvents.map(e=>`<div class="calendar-event ${e.type}" title="${escapeHtml(e.name)} ${money(e.amount)}"><strong>${escapeHtml(e.name)}</strong><span>${money(e.amount)} ${escapeHtml(e.detail)}</span></div>`).join("")}</div></div>`);
+      cells.push(`<div class="calendar-day${outside?" outside":""}${isToday?" today":""}"><div class="calendar-day-number"><span>${cellDay}</span></div><div class="calendar-events">${dayEvents.map(e=>`<div class="calendar-event ${e.type}${e.paid?' paid':''}" title="${escapeHtml(e.name)} ${money(e.amount)}"><strong>${e.paid?'✓ ':''}${escapeHtml(e.name)}</strong><span>${money(e.amount)} ${escapeHtml(e.detail)}</span></div>`).join("")}</div></div>`);
     }
     grid.innerHTML=cells.join("");
   }
@@ -598,16 +604,116 @@
   }
 
   function formatDueDate(iso){ const d=parseISO(iso); return d ? d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : 'No due date'; }
-  function addMonthsISO(iso,months){ const d=parseISO(iso)||new Date(); const targetDay=d.getDate(); const x=new Date(d.getFullYear(),d.getMonth()+months,1); const last=new Date(x.getFullYear(),x.getMonth()+1,0).getDate(); x.setDate(Math.min(targetDay,last)); return `${x.getFullYear()}-${pad(x.getMonth()+1)}-${pad(x.getDate())}`; }
+  function monthKey(year,monthIndex){ return `${year}-${pad(monthIndex+1)}`; }
+  function debtPaymentFor(d,period){ return (d.minimumPayments || []).find(x=>x.period===period) || null; }
+  function billPaymentFor(b,dueISO){ return (b.payments || []).find(x=>x.dueDate===dueISO) || null; }
+  function debtDueDateForMonth(d,year,monthIndex){
+    if(!(Number(d.dueDay)>0)) return null;
+    const day=Math.min(clamp(d.dueDay,1,31),new Date(year,monthIndex+1,0).getDate());
+    return new Date(year,monthIndex,day,12,0,0);
+  }
+  function occurrenceISO(date){ return date ? toISODate(date) : ""; }
+  function nextBillOccurrence(b){
+    if(!b || b.status==='canceled') return null;
+    const current=projectedBillDateForMonth(b,today.getFullYear(),today.getMonth());
+    if(current) return current;
+    for(let i=1;i<=24;i++){
+      const d=new Date(today.getFullYear(),today.getMonth()+i,1,12,0,0);
+      const occurrence=projectedBillDateForMonth(b,d.getFullYear(),d.getMonth());
+      if(occurrence) return occurrence;
+    }
+    return null;
+  }
+  function followingBillOccurrence(b,afterDate){
+    if(!b || !afterDate) return null;
+    for(let i=1;i<=24;i++){
+      const d=new Date(afterDate.getFullYear(),afterDate.getMonth()+i,1,12,0,0);
+      const occurrence=projectedBillDateForMonth(b,d.getFullYear(),d.getMonth());
+      if(occurrence) return occurrence;
+    }
+    return null;
+  }
+  function paymentTimingText(paidAt,dueISO){
+    if(!paidAt) return '';
+    const paid=parseISO(paidAt), due=parseISO(dueISO);
+    if(!paid || !due) return `Paid ${formatDueDate(paidAt)}`;
+    const short=paid.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+    if(paid < due) return `Paid early ${short}`;
+    return `Paid ${short}`;
+  }
+  function toggleDebtMinimumPaid(id,period,checked){
+    const d=state.debts.find(x=>Number(x.id)===Number(id)); if(!d) return;
+    d.minimumPayments=Array.isArray(d.minimumPayments) ? d.minimumPayments : [];
+    d.minimumPayments=d.minimumPayments.filter(x=>x.period!==period);
+    if(checked) d.minimumPayments.push({period,paidAt:todayISO});
+    save(); renderAll();
+  }
+  function toggleBillOccurrencePaid(id,dueISO,checked){
+    const b=state.bills.find(x=>Number(x.id)===Number(id)); if(!b) return;
+    b.payments=Array.isArray(b.payments) ? b.payments : [];
+    b.payments=b.payments.filter(x=>x.dueDate!==dueISO);
+    if(checked) b.payments.push({dueDate:dueISO,paidAt:todayISO});
+    const latest=[...b.payments].sort((a,b)=>String(b.paidAt).localeCompare(String(a.paidAt)))[0];
+    b.lastPaid=latest?.paidAt || '';
+    save(); renderAll();
+  }
+
+  function renderPaymentChecklist(){
+    const wrap=$("#paymentChecklist"), chip=$("#paymentChecklistChip"); if(!wrap || !chip) return;
+    const year=today.getFullYear(), month=today.getMonth(), period=monthKey(year,month);
+    const items=[];
+    state.debts.filter(d=>d.balance>0 && Number(d.min)>0).forEach(d=>{
+      const due=debtDueDateForMonth(d,year,month), payment=debtPaymentFor(d,period);
+      items.push({kind:'debt',id:d.id,name:d.name,amount:Number(d.min)||0,dueISO:occurrenceISO(due),paid:!!payment,paidAt:payment?.paidAt||'',period,detail:'Card / loan minimum'});
+    });
+    state.bills.filter(b=>b.status!=='canceled').forEach(b=>{
+      const due=projectedBillDateForMonth(b,year,month); if(!due) return;
+      const dueISO=occurrenceISO(due), payment=billPaymentFor(b,dueISO);
+      items.push({kind:'bill',id:b.id,name:b.name,amount:Number(b.amount)||0,dueISO,paid:!!payment,paidAt:payment?.paidAt||'',detail:b.frequency==='yearly'?'Yearly payment':'Monthly payment'});
+    });
+    items.sort((a,b)=>(a.dueISO||'9999').localeCompare(b.dueISO||'9999') || a.name.localeCompare(b.name));
+    const paidCount=items.filter(x=>x.paid).length;
+    chip.textContent=`${paidCount} of ${items.length} paid`;
+    wrap.innerHTML=items.length ? items.map(item=>{
+      const dueText=item.dueISO ? `Due ${formatDueDate(item.dueISO)}` : 'Due date not set';
+      const timing=item.paid ? paymentTimingText(item.paidAt,item.dueISO) : '';
+      const dataAttr=item.kind==='debt' ? `data-debt-paid="${item.id}" data-period="${item.period}"` : `data-bill-paid="${item.id}" data-due="${item.dueISO}"`;
+      return `<article class="payment-check-card ${item.paid?'is-paid':''}"><div class="payment-check-main"><div class="payment-check-title"><strong>${escapeHtml(item.name)}</strong><span class="status-pill ${item.paid?'paid':'due'}">${item.paid?'Paid':'Due'}</span></div><span>${escapeHtml(item.detail)} · ${escapeHtml(dueText)}</span>${timing?`<small>${escapeHtml(timing)}</small>`:''}</div><div class="payment-check-side"><strong>${money(item.amount)}</strong><label class="payment-toggle"><input type="checkbox" ${dataAttr} ${item.paid?'checked':''}/><span>${item.paid?'Done':'Mark paid'}</span></label></div></article>`;
+    }).join('') : `<div class="empty">Add debt due dates or recurring payments to build this month’s checklist.</div>`;
+    $$('[data-debt-paid]').forEach(input=>input.addEventListener('change',()=>toggleDebtMinimumPaid(Number(input.dataset.debtPaid),input.dataset.period,input.checked)));
+    $$('[data-bill-paid]').forEach(input=>input.addEventListener('change',()=>toggleBillOccurrencePaid(Number(input.dataset.billPaid),input.dataset.due,input.checked)));
+  }
 
   function renderBills(){
+    renderPaymentChecklist();
     const active=state.bills.filter(b=>b.status!=="canceled");
-    const monthlyEq=active.reduce((s,b)=>s+(b.frequency==='yearly' ? Number(b.amount||0)/12 : Number(b.amount||0)),0);
+    const monthlyEq=active.reduce((sum,b)=>sum+(b.frequency==='yearly' ? Number(b.amount||0)/12 : Number(b.amount||0)),0);
     $("#billTotalChip").textContent=`${money(monthlyEq)}/mo equivalent`;
     const sorted=[...state.bills].sort((a,b)=>(a.status==='canceled')-(b.status==='canceled') || String(a.dueDate).localeCompare(String(b.dueDate)));
-    $("#billList").innerHTML=sorted.length ? sorted.map(b=>`<div class="item ${b.status==='canceled'?'is-canceled':''}"><span class="dot"></span><div class="item-main"><strong>${escapeHtml(b.name)} ${b.status==='canceled'?'<span class="status-pill canceled">Canceled</span>':''}</strong><span>${b.frequency==='yearly'?'Yearly':'Monthly'} · due ${formatDueDate(b.dueDate)}${b.lastPaid?` · last paid ${formatDueDate(b.lastPaid)}`:''}</span></div><div class="item-money">${money(b.amount)}</div><div class="item-actions"><button class="secondary" data-edit-bill="${b.id}" type="button">Edit</button>${b.status!=='canceled'?`<button class="secondary" data-pay-bill="${b.id}" type="button">Paid & advance</button>`:''}<button class="secondary" data-toggle-bill-status="${b.id}" type="button">${b.status==='canceled'?'Reactivate':'Cancel'}</button><button class="icon-button" data-delete-bill="${b.id}" aria-label="Delete recurring bill">×</button></div></div>`).join("") : `<div class="empty">Add monthly or yearly bills and subscriptions.</div>`;
+    $("#billList").innerHTML=sorted.length ? sorted.map(b=>{
+      const occurrence=nextBillOccurrence(b);
+      const dueISO=occurrenceISO(occurrence);
+      const payment=dueISO ? billPaymentFor(b,dueISO) : null;
+      const nextAfter=payment && occurrence ? followingBillOccurrence(b,occurrence) : null;
+      const overdue=occurrence && !payment && occurrence < new Date(today.getFullYear(),today.getMonth(),today.getDate(),0,0,0);
+      const status=b.status==='canceled' ? 'Canceled' : payment ? 'Paid' : overdue ? 'Overdue' : 'Upcoming';
+      const timing=payment ? paymentTimingText(payment.paidAt,dueISO) : '';
+      return `<article class="bill-card ${b.status==='canceled'?'is-canceled':''} ${payment?'is-paid':''}">
+        <div class="bill-card-top">
+          <div class="bill-card-heading"><span class="dot"></span><div><strong>${escapeHtml(b.name)}</strong><div class="bill-card-badges"><span class="status-pill">${b.frequency==='yearly'?'Yearly':'Monthly'}</span><span class="status-pill ${status.toLowerCase()}">${status}</span></div></div></div>
+          <div class="bill-card-amount">${money(b.amount)}</div>
+        </div>
+        <div class="bill-card-details">
+          <div><span>Payment date</span><strong>${occurrence ? formatDueDate(dueISO) : 'No upcoming date'}</strong></div>
+          <div><span>Payment status</span><strong>${payment ? escapeHtml(timing) : overdue ? 'Past due / not marked paid' : 'Not marked paid'}</strong></div>
+          ${nextAfter?`<div><span>Next after this</span><strong>${formatDueDate(occurrenceISO(nextAfter))}</strong></div>`:''}
+        </div>
+        ${b.status!=='canceled' && dueISO ? `<label class="bill-paid-control"><input type="checkbox" data-bill-card-paid="${b.id}" data-due="${dueISO}" ${payment?'checked':''}/><span><strong>${payment?'Payment complete':'Mark this payment as paid'}</strong><small>${payment?'Uncheck if you marked it by mistake.':'Use this even if you pay before the due date.'}</small></span></label>` : ''}
+        <div class="bill-card-actions"><button class="secondary" data-edit-bill="${b.id}" type="button">Edit</button><button class="secondary" data-toggle-bill-status="${b.id}" type="button">${b.status==='canceled'?'Reactivate':'Cancel'}</button><button class="danger" data-delete-bill="${b.id}" type="button">Delete</button></div>
+      </article>`;
+    }).join("") : `<div class="empty">Add monthly or yearly bills and subscriptions.</div>`;
     $$('[data-edit-bill]').forEach(btn=>btn.addEventListener('click',()=>openBillEdit(Number(btn.dataset.editBill))));
-    $$('[data-pay-bill]').forEach(btn=>btn.addEventListener('click',()=>{ const b=state.bills.find(x=>x.id===Number(btn.dataset.payBill)); if(!b) return; b.lastPaid=todayISO; b.dueDate=addMonthsISO(b.dueDate,b.frequency==='yearly'?12:1); save(); renderAll(); }));
+    $$('[data-bill-card-paid]').forEach(input=>input.addEventListener('change',()=>toggleBillOccurrencePaid(Number(input.dataset.billCardPaid),input.dataset.due,input.checked)));
     $$('[data-toggle-bill-status]').forEach(btn=>btn.addEventListener('click',()=>{ const b=state.bills.find(x=>x.id===Number(btn.dataset.toggleBillStatus)); if(!b) return; b.status=b.status==='canceled'?'active':'canceled'; save(); renderAll(); }));
     $$('[data-delete-bill]').forEach(btn=>btn.addEventListener('click',()=>{ if(confirm("Delete this recurring bill or subscription?")){ state.bills=state.bills.filter(x=>x.id!==Number(btn.dataset.deleteBill)); save(); renderAll(); } }));
 
@@ -722,7 +828,7 @@
 
     $("#debtForm").addEventListener("submit",e=>{
       e.preventDefault(); const name=$("#debtName").value.trim(); const balance=Math.max(0,Number($("#debtBalance").value)||0); if(!name || balance<=0) return;
-      state.debts.push({id:uid(),name,balance,apr:Math.max(0,Number($("#debtApr").value)||0),min:Math.max(0,Number($("#debtMin").value)||0),limit:Math.max(0,Number($("#debtLimit").value)||0),dueDay:$("#debtDueDay").value?clamp($("#debtDueDay").value,1,31):"",type:$("#debtType").value});
+      state.debts.push({id:uid(),name,balance,apr:Math.max(0,Number($("#debtApr").value)||0),min:Math.max(0,Number($("#debtMin").value)||0),limit:Math.max(0,Number($("#debtLimit").value)||0),dueDay:$("#debtDueDay").value?clamp($("#debtDueDay").value,1,31):"",type:$("#debtType").value,minimumPayments:[]});
       e.target.reset(); $("#debtApr").value=0; $("#debtMin").value=0; save(); renderAll();
     });
 
@@ -750,7 +856,7 @@
     $("#receiptTotal").addEventListener("input",updateReceiptTotals);
     $("#confirmReceipt").addEventListener("click",confirmReceipt);
 
-    $("#billForm").addEventListener("submit",e=>{ e.preventDefault(); const name=$("#billName").value.trim(); const amount=Math.max(0,Number($("#billAmount").value)||0); const dueDate=$("#billDueDate").value; if(!name || amount<=0 || !dueDate) return; state.bills.push({id:uid(),name,amount,frequency:$("#billFrequency").value,dueDate,status:'active',lastPaid:''}); e.target.reset(); $("#billFrequency").value='monthly'; $("#billDueDate").value=todayISO; save(); renderAll(); });
+    $("#billForm").addEventListener("submit",e=>{ e.preventDefault(); const name=$("#billName").value.trim(); const amount=Math.max(0,Number($("#billAmount").value)||0); const dueDate=$("#billDueDate").value; if(!name || amount<=0 || !dueDate) return; state.bills.push({id:uid(),name,amount,frequency:$("#billFrequency").value,dueDate,status:'active',lastPaid:'',payments:[]}); e.target.reset(); $("#billFrequency").value='monthly'; $("#billDueDate").value=todayISO; save(); renderAll(); });
     $("#billEditForm").addEventListener("submit",e=>{ e.preventDefault(); const b=state.bills.find(x=>x.id===Number($("#editBillId").value)); if(!b) return; b.name=$("#editBillName").value.trim()||b.name; b.amount=Math.max(0,Number($("#editBillAmount").value)||0); b.frequency=$("#editBillFrequency").value; b.dueDate=$("#editBillDueDate").value; $("#billEditDialog").close(); save(); renderAll(); });
     ["#billEditCancel","#billEditCancelX"].forEach(id=>$(id).addEventListener("click",()=>$("#billEditDialog").close()));
 

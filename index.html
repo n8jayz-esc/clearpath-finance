@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#111827" />
   <title>ClearPath Finance</title>
-  <link rel="stylesheet" href="styles.css?v=4.1" />
+  <link rel="stylesheet" href="styles.css?v=4.2" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -482,9 +482,25 @@
             </div>
             <span class="chip" id="billTotalChip">$0/mo equivalent</span>
           </div>
-          <div id="billList" class="stack"></div>
+          <div class="payment-center-head">
+            <div>
+              <p class="section-kicker">Manual payment tracking</p>
+              <h3 class="small-heading">This month’s payment checklist</h3>
+              <p class="note">Mark card minimums and recurring payments as paid, even when you pay them early.</p>
+            </div>
+            <span class="chip" id="paymentChecklistChip">0 of 0 paid</span>
+          </div>
+          <div id="paymentChecklist" class="payment-checklist-grid"></div>
 
-          <form id="billForm" class="top-gap">
+          <div class="recurring-list-head">
+            <div>
+              <p class="section-kicker">Subscriptions & recurring bills</p>
+              <h3 class="small-heading">Manage recurring payments</h3>
+            </div>
+          </div>
+          <div id="billList" class="bill-card-list"></div>
+
+          <form id="billForm" class="top-gap recurring-bill-form">
             <div class="form-grid four">
               <label>Name<input id="billName" required placeholder="Spotify, insurance, tuition..." /></label>
               <label>Amount<input id="billAmount" required type="number" min="0" step="0.01" /></label>
@@ -765,7 +781,7 @@
     </form>
   </dialog>
 
-  <script src="app.js?v=4.1"></script>
+  <script src="app.js?v=4.2"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
