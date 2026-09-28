@@ -407,3 +407,71 @@ tbody tr:last-child td{border-bottom:0}
   .calendar-event span{display:none}
   .asset-balance-editor{width:100%;min-width:0}.asset-balance-editor label{flex:1}
 }
+
+/* v4.1: mobile-friendly asset/account cards */
+@media(max-width:560px){
+  /* Keep each account name readable instead of squeezing it beside the balance editor. */
+  #assetList .item{
+    display:grid;
+    grid-template-columns:12px minmax(0,1fr) 44px;
+    grid-template-rows:auto auto;
+    align-items:start;
+    gap:10px;
+    padding:14px;
+  }
+  #assetList .item > .dot{
+    grid-column:1;
+    grid-row:1;
+    align-self:center;
+    margin-top:5px;
+  }
+  #assetList .item > .item-main{
+    grid-column:2;
+    grid-row:1;
+    width:100%;
+    min-width:0;
+  }
+  #assetList .item > .item-main strong{
+    font-size:17px;
+    line-height:1.25;
+    overflow-wrap:normal;
+    word-break:normal;
+  }
+  #assetList .item > .item-main span{
+    line-height:1.4;
+    overflow-wrap:normal;
+    word-break:normal;
+  }
+  #assetList .item > .icon-button{
+    grid-column:3;
+    grid-row:1;
+    width:44px;
+    height:44px;
+    justify-self:end;
+  }
+  #assetList .asset-balance-editor{
+    grid-column:1 / -1;
+    grid-row:2;
+    display:grid;
+    grid-template-columns:minmax(0,1fr) auto;
+    align-items:end;
+    gap:8px;
+    width:100%;
+    min-width:0;
+  }
+  #assetList .asset-balance-editor label{
+    width:100%;
+    min-width:0;
+  }
+  #assetList .asset-balance-editor input{
+    width:100%;
+    min-width:0;
+    font-size:16px;
+    min-height:44px;
+  }
+  #assetList .asset-balance-editor .mini-button{
+    min-height:44px;
+    padding:8px 12px;
+    white-space:nowrap;
+  }
+}
