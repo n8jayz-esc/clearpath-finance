@@ -1,0 +1,780 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#111827" />
+  <title>ClearPath Finance</title>
+  <link rel="stylesheet" href="styles.css" />
+
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#111827" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="ClearPath" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+</head>
+<body>
+  <header class="site-header">
+    <div>
+      <p class="eyebrow">College Project Prototype</p>
+      <h1>ClearPath Finance</h1>
+      <p class="subtitle">Budgeting, debt payoff, bills, goals, transactions, and net worth in one simple app.</p>
+    </div>
+    <div class="header-actions">
+      <span class="status-dot"></span>
+      <span id="saveStatus">Saved locally</span>
+    </div>
+  </header>
+
+  <main class="app-shell">
+    <nav class="tabs" aria-label="Main navigation">
+      <button class="tab active" data-tab="dashboard">Dashboard</button>
+      <button class="tab" data-tab="paychecks">Paychecks</button>
+      <button class="tab" data-tab="debts">Debts</button>
+      <button class="tab" data-tab="budget">Budget</button>
+      <button class="tab" data-tab="transactions">Transactions</button>
+      <button class="tab" data-tab="bills">Bills & Goals</button>
+      <button class="tab" data-tab="accounts">Accounts</button>
+      <button class="tab" data-tab="reports">Reports</button>
+    </nav>
+
+    <section class="view active" id="view-dashboard">
+      <div class="metrics four">
+        <article class="metric-card">
+          <span>Total debt</span>
+          <strong id="metricDebt">$0</strong>
+          <small id="metricDebtCount">0 accounts</small>
+        </article>
+        <article class="metric-card">
+          <span>Emergency fund</span>
+          <strong id="metricEmergency">$0</strong>
+          <div class="progress"><i id="metricEmergencyBar"></i></div>
+        </article>
+        <article class="metric-card">
+          <span>Monthly minimums</span>
+          <strong id="metricMinimums">$0</strong>
+          <small>Tracked debts</small>
+        </article>
+        <article class="metric-card">
+          <span>Net worth</span>
+          <strong id="metricNetWorth">$0</strong>
+          <small>Assets minus debt</small>
+        </article>
+      </div>
+
+      <div class="two-col">
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="section-kicker">Weekly paycheck</p>
+              <h2>Wednesday allocator</h2>
+              <p>Enter the take-home amount. The app reserves everyday spending and bills first, then sends the rest to your current priority.</p>
+            </div>
+            <span class="chip" id="priorityChip">Emergency fund</span>
+          </div>
+
+          <div class="form-grid two">
+            <label>Net paycheck
+              <input id="payNet" type="number" min="0" step="0.01" value="840" />
+            </label>
+            <label>Living %
+              <input id="payLivingPct" type="number" min="0" max="100" step="1" value="20" />
+            </label>
+            <label>Buffer %
+              <input id="payBufferPct" type="number" min="0" max="100" step="1" value="8" />
+            </label>
+            <label>Weekly bill reserve
+              <input id="payBills" type="number" min="0" step="0.01" value="95" />
+            </label>
+          </div>
+          <div id="allocationResults" class="stack top-gap"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="section-kicker">Daily routine</p>
+              <h2>What needs attention?</h2>
+            </div>
+          </div>
+          <div id="dailyChecklist" class="stack"></div>
+          <div class="callout top-gap">
+            Data in this project stays in your browser using local storage. Live bank syncing, credit-report pulls, and real notifications would require production APIs.
+          </div>
+        </article>
+      </div>
+
+      <article class="panel">
+        <div class="panel-head">
+          <div>
+            <p class="section-kicker">Snapshot</p>
+            <h2>Financial picture</h2>
+          </div>
+        </div>
+        <div class="snapshot-grid">
+          <div><span>Planned monthly income</span><strong id="snapshotIncome">$0</strong></div>
+          <div><span>Budgeted spending</span><strong id="snapshotBudget">$0</strong></div>
+          <div><span>Left to budget</span><strong id="snapshotLeft">$0</strong></div>
+          <div><span>Current snowball target</span><strong id="snapshotTarget">—</strong></div>
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-head calendar-head">
+          <div>
+            <p class="section-kicker">Monthly calendar</p>
+            <h2 id="calendarTitle">Upcoming payments</h2>
+            <p>Card minimums, monthly bills, and yearly subscriptions appear automatically from their due dates.</p>
+          </div>
+          <div class="button-row">
+            <button id="calendarPrev" class="secondary" type="button" aria-label="Previous month">←</button>
+            <button id="calendarToday" class="secondary" type="button">This month</button>
+            <button id="calendarNext" class="secondary" type="button" aria-label="Next month">→</button>
+          </div>
+        </div>
+        <div class="calendar-legend">
+          <span><i class="calendar-key debt-key"></i>Card / loan minimum</span>
+          <span><i class="calendar-key bill-key"></i>Bill / subscription</span>
+        </div>
+        <div class="calendar-weekdays" aria-hidden="true">
+          <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+        </div>
+        <div id="paymentCalendar" class="payment-calendar" aria-label="Monthly payment calendar"></div>
+      </article>
+    </section>
+
+    <section class="view" id="view-paychecks">
+      <div class="two-col">
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="section-kicker">Every payday</p>
+              <h2>Enter & allocate paycheck</h2>
+              <p>Enter each weekly take-home check, then split it across every budget category. Use auto-allocate as a starting point and adjust any amount before saving.</p>
+            </div>
+            <span class="chip" id="paycheckRemainingChip">$0 unallocated</span>
+          </div>
+
+          <div class="form-grid two">
+            <label>Pay date
+              <input id="paycheckDate" type="date" />
+            </label>
+            <label>Take-home paycheck
+              <input id="paycheckAmount" type="number" min="0" step="0.01" placeholder="650.13" />
+            </label>
+          </div>
+
+          <div class="button-row top-gap">
+            <button id="autoAllocatePaycheck" class="secondary" type="button">Auto-allocate from budget</button>
+            <button id="clearPaycheckAllocation" class="secondary" type="button">Clear allocations</button>
+          </div>
+
+          <div id="paycheckAllocationEditor" class="stack top-gap"></div>
+
+          <div class="allocation-total top-gap">
+            <div><span>Allocated</span><strong id="paycheckAllocatedTotal">$0</strong></div>
+            <div><span>Unallocated</span><strong id="paycheckUnallocatedTotal">$0</strong></div>
+          </div>
+
+          <button id="savePaycheck" class="primary top-gap" type="button">Save paycheck allocation</button>
+          <p class="note">Saving a paycheck records the income in Reports and adds each allocation to the category's Funded amount for the month.</p>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="section-kicker">History</p>
+              <h2>Saved paychecks</h2>
+              <p>See what each weekly check funded and remove an entry if you made a mistake.</p>
+            </div>
+            <span class="chip" id="paycheckCountChip">0 checks</span>
+          </div>
+          <div id="paycheckHistory" class="stack"></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="view" id="view-debts">
+      <div class="two-col">
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="section-kicker">Cards & loans</p>
+              <h2>Debt accounts</h2>
+              <p>Track balance, APR, minimum payment, credit limit, and payoff order.</p>
+            </div>
+            <span class="chip" id="debtTotalChip">$0</span>
+          </div>
+          <div id="debtList" class="stack"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="section-kicker">Payoff planner</p>
+              <h2>Snowball vs. avalanche</h2>
+            </div>
+          </div>
+
+          <div class="form-grid two">
+            <label>Strategy
+              <select id="payoffStrategy">
+                <option value="snowball">Snowball: lowest balance</option>
+                <option value="avalanche">Avalanche: highest APR</option>
+              </select>
+            </label>
+            <label>Extra per month
+              <input id="payoffExtra" type="number" min="0" step="10" value="2000" />
+            </label>
+            <label>One-time lump sum
+              <input id="payoffLump" type="number" min="0" step="10" value="0" />
+            </label>
+            <label>Start month
+              <input id="payoffStart" type="month" />
+            </label>
+          </div>
+
+          <div class="metrics two top-gap">
+            <div class="metric-card"><span>Estimated debt-free</span><strong id="payoffDate">—</strong></div>
+            <div class="metric-card"><span>Projected interest</span><strong id="payoffInterest">$0</strong></div>
+          </div>
+          <p class="note" id="payoffNote"></p>
+          <div id="payoffOrder" class="stack"></div>
+        </article>
+      </div>
+
+      <article class="panel">
+        <div class="panel-head">
+          <div>
+            <p class="section-kicker">Add account</p>
+            <h2>New card or loan</h2>
+          </div>
+        </div>
+        <form id="debtForm">
+          <div class="form-grid four">
+            <label>Name<input id="debtName" required placeholder="Auto loan" /></label>
+            <label>Balance<input id="debtBalance" required type="number" min="0" step="0.01" /></label>
+            <label>APR %<input id="debtApr" type="number" min="0" step="0.01" value="0" /></label>
+            <label>Minimum / month<input id="debtMin" type="number" min="0" step="0.01" value="0" /></label>
+            <label>Credit limit<input id="debtLimit" type="number" min="0" step="0.01" placeholder="Optional" /></label>
+            <label>Due day<input id="debtDueDay" type="number" min="1" max="31" placeholder="Optional" /></label>
+            <label>Type
+              <select id="debtType">
+                <option>Credit card</option>
+                <option>Charge card</option>
+                <option>Loan</option>
+                <option>Student loan</option>
+                <option>Tuition</option>
+                <option>Tax debt</option>
+                <option>Other</option>
+              </select>
+            </label>
+            <div class="form-button"><button class="primary" type="submit">Add debt</button></div>
+          </div>
+        </form>
+      </article>
+    </section>
+
+    <section class="view" id="view-budget">
+      <article class="panel">
+        <div class="panel-head">
+          <div>
+            <p class="section-kicker">Budget overview</p>
+            <h2>Planned vs. spent</h2>
+            <p>Receipts and expense transactions update these category totals automatically. Remaining money shows what is still available or saved.</p>
+          </div>
+          <span class="chip" id="budgetOverviewPeriod">This month</span>
+        </div>
+        <div id="budgetOverview" class="budget-overview-grid"></div>
+      </article>
+
+      <div class="two-col">
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="section-kicker">Monthly plan</p>
+              <h2>Monthly budget</h2>
+              <p>Edit either the percentage or planned dollars. The other value recalculates automatically.</p>
+            </div>
+            <span class="chip" id="budgetLeftChip">$0 left</span>
+          </div>
+
+          <label class="wide-label">Expected monthly take-home
+            <input id="monthlyIncome" type="number" min="0" step="10" />
+          </label>
+
+          <div class="table-scroll top-gap">
+            <table>
+              <thead>
+                <tr><th>Category</th><th>Type</th><th>%</th><th>Planned</th><th>Funded</th><th>Spent</th><th>Remaining</th><th>Rollover</th><th></th></tr>
+              </thead>
+              <tbody id="budgetTable"></tbody>
+            </table>
+          </div>
+          <div class="button-row top-gap">
+            <button id="addBudgetCategory" class="secondary" type="button">+ Add category</button>
+            <button id="newMonth" class="secondary" type="button">Carry rollovers forward</button>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="section-kicker">Weekly plan</p>
+              <h2>Weekly budget</h2>
+              <p>Use the same categories with separate weekly percentages for paycheck-by-paycheck planning.</p>
+            </div>
+            <span class="chip" id="weeklyBudgetLeftChip">$0 left</span>
+          </div>
+
+          <label class="wide-label">Expected weekly take-home
+            <input id="weeklyIncome" type="number" min="0" step="10" />
+          </label>
+
+          <div class="table-scroll top-gap">
+            <table>
+              <thead>
+                <tr><th>Category</th><th>%</th><th>Planned</th><th>Funded</th><th>Spent</th><th>Remaining</th></tr>
+              </thead>
+              <tbody id="weeklyBudgetTable"></tbody>
+            </table>
+          </div>
+
+          <div class="metrics three top-gap">
+            <div class="metric-card"><span>Weekly planned</span><strong id="weeklyBudgetPlanned">$0</strong></div>
+            <div class="metric-card"><span>Funded this week</span><strong id="weeklyBudgetFunded">$0</strong></div>
+            <div class="metric-card"><span>Spent this week</span><strong id="weeklyBudgetSpent">$0</strong></div>
+          </div>
+        </article>
+      </div>
+
+      <article class="panel">
+        <div class="panel-head">
+          <div>
+            <p class="section-kicker">Monthly totals</p>
+            <h2>Budget health</h2>
+          </div>
+        </div>
+        <div class="metrics four">
+          <div class="metric-card"><span>Total planned</span><strong id="budgetPlanned">$0</strong></div>
+          <div class="metric-card"><span>Funded this month</span><strong id="budgetFunded">$0</strong></div>
+          <div class="metric-card"><span>Total spent</span><strong id="budgetSpent">$0</strong></div>
+          <div class="metric-card"><span>Unspent / saved</span><strong id="budgetSaved">$0</strong></div>
+        </div>
+      </article>
+    </section>
+
+    <section class="view" id="view-transactions">
+      <article class="panel receipt-panel">
+        <div class="panel-head">
+          <div>
+            <p class="section-kicker">Mobile receipt capture</p>
+            <h2>Scan a receipt</h2>
+            <p>Take a photo or choose an image. OCR will try to identify item names and prices, then you confirm or edit every line and choose its budget category before saving.</p>
+          </div>
+          <span class="chip">Camera ready</span>
+        </div>
+
+        <div class="receipt-capture-grid">
+          <div>
+            <label class="file-drop">
+              <strong>Take photo / choose receipt</strong>
+              <span>On iPhone this can open the camera.</span>
+              <input id="receiptImage" type="file" accept="image/*" capture="environment" />
+            </label>
+            <img id="receiptPreview" class="receipt-preview" alt="Receipt preview" hidden />
+            <div class="button-row top-gap">
+              <button id="scanReceipt" class="primary" type="button">Scan receipt</button>
+              <button id="addReceiptItem" class="secondary" type="button">+ Add item manually</button>
+              <button id="clearReceipt" class="secondary" type="button">Clear</button>
+            </div>
+            <p id="receiptScanStatus" class="note">Choose a receipt image to begin. If OCR cannot read something, you can type it manually.</p>
+          </div>
+
+          <div>
+            <div class="form-grid two">
+              <label>Merchant
+                <input id="receiptMerchant" placeholder="Costco, Walmart, AutoZone..." />
+              </label>
+              <label>Receipt date
+                <input id="receiptDate" type="date" />
+              </label>
+              <label>Receipt total
+                <input id="receiptTotal" type="number" min="0" step="0.01" placeholder="0.00" />
+              </label>
+              <label>Confirmed item total
+                <input id="receiptConfirmedTotal" type="text" readonly value="$0.00" />
+              </label>
+            </div>
+            <div id="receiptDifference" class="callout top-gap">Add or scan items to compare them with the receipt total.</div>
+          </div>
+        </div>
+
+        <div id="receiptItems" class="stack top-gap"></div>
+        <button id="confirmReceipt" class="primary top-gap" type="button">Confirm receipt & add transactions</button>
+        <p class="note">Receipt OCR uses an internet-loaded browser library in this prototype. Manual confirmation still works if OCR is unavailable.</p>
+      </article>
+
+      <div class="two-col">
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="section-kicker">Money activity</p>
+              <h2>Add transaction</h2>
+            </div>
+          </div>
+          <form id="transactionForm">
+            <div class="form-grid two">
+              <label>Description<input id="txName" required placeholder="Wawa gas" /></label>
+              <label>Amount<input id="txAmount" required type="number" min="0" step="0.01" /></label>
+              <label>Type
+                <select id="txType">
+                  <option value="expense">Expense</option>
+                  <option value="income">Income</option>
+                  <option value="debt">Debt payment</option>
+                  <option value="transfer">Transfer</option>
+                </select>
+              </label>
+              <label>Category<select id="txCategory"></select></label>
+              <label>Debt account<select id="txDebt"></select></label>
+              <label>Tag<input id="txTag" placeholder="Truck, school, side job..." /></label>
+            </div>
+            <button class="primary top-gap" type="submit">Add transaction</button>
+          </form>
+
+          <hr />
+
+          <div class="panel-head">
+            <div>
+              <p class="section-kicker">Automation</p>
+              <h2>Rules</h2>
+              <p>If a description contains a word, automatically choose a category.</p>
+            </div>
+          </div>
+          <form id="ruleForm" class="form-grid three">
+            <label>Contains<input id="ruleContains" required placeholder="Wawa" /></label>
+            <label>Category<select id="ruleCategory"></select></label>
+            <div class="form-button"><button class="secondary" type="submit">Add rule</button></div>
+          </form>
+          <div id="ruleList" class="stack top-gap"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="section-kicker">History</p>
+              <h2>Recent transactions</h2>
+            </div>
+            <input id="txSearch" class="search" placeholder="Search" />
+          </div>
+          <div id="transactionList" class="stack"></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="view" id="view-bills">
+      <div class="two-col">
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="section-kicker">Recurring bills & subscriptions</p>
+              <h2>Monthly and yearly payments</h2>
+              <p>Track subscriptions, memberships, insurance, tuition plans, and other recurring bills with full due dates.</p>
+            </div>
+            <span class="chip" id="billTotalChip">$0/mo equivalent</span>
+          </div>
+          <div id="billList" class="stack"></div>
+
+          <form id="billForm" class="top-gap">
+            <div class="form-grid four">
+              <label>Name<input id="billName" required placeholder="Spotify, insurance, tuition..." /></label>
+              <label>Amount<input id="billAmount" required type="number" min="0" step="0.01" /></label>
+              <label>Frequency
+                <select id="billFrequency">
+                  <option value="monthly">Monthly</option>
+                  <option value="yearly">Yearly</option>
+                </select>
+              </label>
+              <label>Next due date<input id="billDueDate" required type="date" /></label>
+            </div>
+            <button class="primary top-gap" type="submit">Add recurring bill</button>
+          </form>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="section-kicker">Save up</p>
+              <h2>Goals</h2>
+            </div>
+          </div>
+
+          <div class="goal-card">
+            <div class="goal-top">
+              <div>
+                <strong>Starter emergency fund</strong>
+                <span>Build this before aggressive debt payoff</span>
+              </div>
+              <strong id="emergencyGoalText">$0 / $1,000</strong>
+            </div>
+            <div class="progress large"><i id="emergencyGoalBar"></i></div>
+            <div class="form-grid two top-gap">
+              <label>Current<input id="emergencyCurrent" type="number" min="0" step="1" /></label>
+              <label>Target<input id="emergencyTarget" type="number" min="1" step="50" /></label>
+            </div>
+          </div>
+
+          <div id="customGoals" class="stack top-gap"></div>
+
+          <form id="goalForm" class="form-grid three top-gap">
+            <label>Goal name<input id="goalName" required placeholder="Truck repair fund" /></label>
+            <label>Current<input id="goalCurrent" required type="number" min="0" step="1" value="0" /></label>
+            <label>Target<input id="goalTarget" required type="number" min="1" step="1" /></label>
+            <div class="form-button"><button class="secondary" type="submit">Add goal</button></div>
+          </form>
+        </article>
+      </div>
+    </section>
+
+    <section class="view" id="view-accounts">
+      <div class="two-col">
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="section-kicker">Net worth</p>
+              <h2>Assets & investments</h2>
+              <p>Checking, savings, cash, investment accounts, and other assets.</p>
+            </div>
+            <span class="chip" id="assetTotalChip">$0</span>
+          </div>
+          <div id="assetList" class="stack"></div>
+
+          <form id="assetForm" class="form-grid three top-gap">
+            <label>Account name<input id="assetName" required placeholder="HYSA" /></label>
+            <label>Balance<input id="assetBalance" required type="number" min="0" step="0.01" /></label>
+            <label>Type
+              <select id="assetType">
+                <option>Checking</option>
+                <option>Savings</option>
+                <option>Investment</option>
+                <option>Cash</option>
+                <option>Other asset</option>
+              </select>
+            </label>
+            <div class="form-button"><button class="primary" type="submit">Add asset</button></div>
+          </form>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="section-kicker">Credit health</p>
+              <h2>Utilization & score</h2>
+            </div>
+          </div>
+
+          <label class="wide-label">Manual credit-score snapshot
+            <input id="creditScore" type="number" min="300" max="850" placeholder="Optional" />
+          </label>
+          <div id="creditScoreView" class="credit-score"></div>
+          <div id="utilizationList" class="stack top-gap"></div>
+          <div class="callout top-gap">Add a credit limit to each card on the Debts tab to calculate utilization. This project does not pull a real credit report.</div>
+        </article>
+      </div>
+    </section>
+
+    <section class="view" id="view-reports">
+      <article class="panel">
+        <div class="panel-head weekly-report-head">
+          <div>
+            <p class="section-kicker">Weekly report</p>
+            <h2>Week at a glance</h2>
+            <p>See what came in, what you spent, how much was funded toward savings goals, and what went to debt minimums.</p>
+          </div>
+          <div class="week-controls">
+            <button id="reportWeekPrev" class="secondary" type="button" aria-label="Previous week">←</button>
+            <input id="reportWeekDate" type="date" aria-label="Choose a date in the report week" />
+            <button id="reportWeekToday" class="secondary" type="button">This week</button>
+            <button id="reportWeekNext" class="secondary" type="button" aria-label="Next week">→</button>
+          </div>
+        </div>
+        <p id="weeklyReportRange" class="note"></p>
+        <div class="metrics four weekly-report-metrics">
+          <div class="metric-card"><span>Income</span><strong id="weeklyReportIncome">$0</strong><small>Paychecks + income transactions</small></div>
+          <div class="metric-card"><span>Spent</span><strong id="weeklyReportSpent">$0</strong><small>Everyday expense transactions</small></div>
+          <div class="metric-card"><span>Saved / goals funded</span><strong id="weeklyReportSaved">$0</strong><small>Paycheck allocations to goal categories</small></div>
+          <div class="metric-card"><span>Debt minimums</span><strong id="weeklyReportDebtMinimums">$0</strong><small id="weeklyDebtMinimumCaption">Recorded this week</small></div>
+        </div>
+        <div class="two-col top-gap">
+          <div>
+            <p class="section-kicker">Weekly spending</p>
+            <h2 class="small-heading">By category</h2>
+            <div id="weeklySpendingChart" class="chart-list top-gap"></div>
+          </div>
+          <div>
+            <p class="section-kicker">Weekly funding</p>
+            <h2 class="small-heading">Paycheck allocations</h2>
+            <div id="weeklyFundingChart" class="chart-list top-gap"></div>
+          </div>
+        </div>
+      </article>
+
+      <div class="two-col">
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="section-kicker">Cash flow</p>
+              <h2>Income vs. spending</h2>
+            </div>
+          </div>
+          <div id="cashFlowChart" class="chart-list"></div>
+          <div class="metrics two top-gap">
+            <div class="metric-card"><span>Income tracked</span><strong id="reportIncome">$0</strong></div>
+            <div class="metric-card"><span>Outflow tracked</span><strong id="reportOutflow">$0</strong></div>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="section-kicker">Spending</p>
+              <h2>By category</h2>
+            </div>
+          </div>
+          <div id="spendingChart" class="chart-list"></div>
+        </article>
+      </div>
+
+      <article class="panel">
+        <div class="panel-head">
+          <div>
+            <p class="section-kicker">Debt picture</p>
+            <h2>Balance comparison</h2>
+          </div>
+        </div>
+        <div id="debtChart" class="chart-list"></div>
+      </article>
+    </section>
+
+    <footer class="project-footer">
+      <div>
+        <strong>ClearPath Finance</strong>
+        <span>Original budgeting and debt-payoff project prototype.</span>
+      </div>
+      <div class="button-row">
+        <button id="exportData" class="secondary" type="button">Export backup</button>
+        <label class="file-button">Import backup<input id="importData" type="file" accept="application/json" /></label>
+        <button id="resetData" class="danger" type="button">Reset data</button>
+      </div>
+    </footer>
+  </main>
+
+  <template id="budgetRowTemplate">
+    <tr>
+      <td><input class="table-input budget-name" /></td>
+      <td>
+        <select class="table-input budget-type">
+          <option value="fixed">Fixed</option>
+          <option value="flex">Flexible</option>
+          <option value="nonmonthly">Non-monthly</option>
+          <option value="goal">Goal</option>
+        </select>
+      </td>
+      <td><input class="table-input budget-monthly-pct" type="number" min="0" max="100" step="0.1" /></td>
+      <td><input class="table-input budget-planned" type="number" min="0" step="1" /></td>
+      <td class="budget-funded-cell">$0</td>
+      <td class="budget-spent-cell">$0</td>
+      <td class="budget-remaining-cell">$0</td>
+      <td><input class="budget-rollover" type="checkbox" /></td>
+      <td><button class="icon-button budget-delete" type="button" aria-label="Delete category">×</button></td>
+    </tr>
+  </template>
+
+  <template id="weeklyBudgetRowTemplate">
+    <tr>
+      <td class="weekly-budget-name"></td>
+      <td><input class="table-input budget-weekly-pct" type="number" min="0" max="100" step="0.1" /></td>
+      <td><input class="table-input budget-weekly-planned" type="number" min="0" step="1" /></td>
+      <td class="weekly-funded-cell">$0</td>
+      <td class="weekly-spent-cell">$0</td>
+      <td class="weekly-remaining-cell">$0</td>
+    </tr>
+  </template>
+
+  <dialog id="debtEditDialog" class="edit-dialog">
+    <form id="debtEditForm" method="dialog">
+      <div class="panel-head">
+        <div>
+          <p class="section-kicker">Edit account</p>
+          <h2>Update debt</h2>
+        </div>
+        <button id="debtEditCancelX" class="icon-button" type="button" aria-label="Close">×</button>
+      </div>
+      <input id="editDebtId" type="hidden" />
+      <div class="form-grid two">
+        <label>Name<input id="editDebtName" required /></label>
+        <label>Current balance<input id="editDebtBalance" required type="number" min="0" step="0.01" /></label>
+        <label>APR %<input id="editDebtApr" type="number" min="0" step="0.01" /></label>
+        <label>Minimum / month<input id="editDebtMin" type="number" min="0" step="0.01" /></label>
+        <label>Credit limit<input id="editDebtLimit" type="number" min="0" step="0.01" /></label>
+        <label>Due day<input id="editDebtDueDay" type="number" min="1" max="31" /></label>
+        <label>Type
+          <select id="editDebtType">
+            <option>Credit card</option>
+            <option>Charge card</option>
+            <option>Loan</option>
+            <option>Student loan</option>
+            <option>Tuition</option>
+            <option>Tax debt</option>
+            <option>Other</option>
+          </select>
+        </label>
+      </div>
+      <div class="button-row top-gap">
+        <button id="debtEditSave" class="primary" type="submit">Save changes</button>
+        <button id="debtEditCancel" class="secondary" type="button">Cancel</button>
+      </div>
+    </form>
+  </dialog>
+
+
+  <dialog id="billEditDialog" class="edit-dialog">
+    <form id="billEditForm" method="dialog">
+      <div class="panel-head">
+        <div>
+          <p class="section-kicker">Edit recurring payment</p>
+          <h2>Update bill or subscription</h2>
+        </div>
+        <button id="billEditCancelX" class="icon-button" type="button" aria-label="Close">×</button>
+      </div>
+      <input id="editBillId" type="hidden" />
+      <div class="form-grid two">
+        <label>Name<input id="editBillName" required /></label>
+        <label>Amount<input id="editBillAmount" required type="number" min="0" step="0.01" /></label>
+        <label>Frequency
+          <select id="editBillFrequency">
+            <option value="monthly">Monthly</option>
+            <option value="yearly">Yearly</option>
+          </select>
+        </label>
+        <label>Next due date<input id="editBillDueDate" required type="date" /></label>
+      </div>
+      <div class="button-row top-gap">
+        <button class="primary" type="submit">Save changes</button>
+        <button id="billEditCancel" class="secondary" type="button">Cancel</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="app.js"></script>
+
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("./sw.js").catch(() => {});
+      });
+    }
+  </script>
+</body>
+</html>
