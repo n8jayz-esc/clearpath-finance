@@ -1,7 +1,9 @@
-const CACHE_NAME = "clearpath-finance-v4";
+const CACHE_NAME = "clearpath-finance-v4-fixed-2";
 const APP_SHELL = [
   "./",
   "./index.html",
+  "./styles.css",
+  "./app.js",
   "./manifest.webmanifest",
   "./icon-192.png",
   "./icon-512.png",
