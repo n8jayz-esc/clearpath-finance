@@ -635,3 +635,74 @@ tbody tr:last-child td{border-bottom:0}
   .bill-card-actions .danger:last-child:nth-child(3){grid-column:1 / -1}
   .recurring-bill-form .primary{width:100%;min-height:48px}
 }
+
+
+/* v4.3 debt-progress dashboard */
+.debt-progress-panel{overflow:hidden}
+.debt-progress-head{align-items:center}
+.debt-progress-hero{
+  display:grid;
+  grid-template-columns:150px minmax(0,1fr);
+  gap:20px;
+  align-items:center;
+}
+.debt-progress-ring{
+  --debt-progress:0deg;
+  width:138px;
+  aspect-ratio:1;
+  border-radius:50%;
+  display:grid;
+  place-items:center;
+  background:conic-gradient(var(--good) var(--debt-progress),var(--surface-2) 0);
+  position:relative;
+}
+.debt-progress-ring::after{
+  content:"";
+  position:absolute;
+  inset:11px;
+  border-radius:50%;
+  background:var(--surface);
+  border:1px solid var(--border);
+}
+.debt-progress-ring>div{position:relative;z-index:1;text-align:center}
+.debt-progress-ring strong{display:block;font-size:28px;line-height:1}
+.debt-progress-ring span{display:block;color:var(--muted);font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;margin-top:5px}
+.debt-progress-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.debt-progress-stat{padding:11px 12px;border:1px solid var(--border);border-radius:13px;background:var(--surface-2);min-width:0}
+.debt-progress-stat span{display:block;color:var(--muted);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em}
+.debt-progress-stat strong{display:block;font-size:19px;margin-top:4px;overflow-wrap:anywhere}
+.debt-progress-message{grid-column:1/-1;margin:0;color:var(--muted);font-size:13px;line-height:1.45}
+.debt-master-progress{height:14px;border:1px solid var(--border);border-radius:999px;background:var(--surface-2);overflow:hidden;margin-top:15px}
+.debt-master-progress i{display:block;height:100%;width:0;border-radius:999px;background:linear-gradient(90deg,var(--series-a),var(--good));transition:width .3s ease}
+.debt-progress-accounts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.debt-progress-row{padding:12px;border:1px solid var(--border);border-radius:14px;background:var(--surface-2);min-width:0}
+.debt-progress-row.is-up{border-color:color-mix(in srgb,var(--warn) 55%,var(--border))}
+.debt-progress-row-head,.debt-progress-row-foot{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;min-width:0}
+.debt-progress-row-head>div{min-width:0}
+.debt-progress-row-head strong{font-size:14px;overflow-wrap:anywhere}
+.debt-progress-row-head span{display:block;color:var(--muted);font-size:11px;margin-top:2px}
+.debt-progress-row-foot{color:var(--muted);font-size:10px;margin-top:6px}
+.debt-account-bar{height:8px;border:1px solid var(--border);border-radius:999px;background:var(--surface);overflow:hidden;margin-top:9px}
+.debt-account-bar i{display:block;height:100%;width:0;border-radius:999px;background:var(--series-b);transition:width .25s ease}
+.monthly-win-card{display:grid;grid-template-columns:minmax(0,1fr) minmax(160px,.8fr);gap:14px;align-items:center;padding:13px 14px;border:1px solid var(--border);border-radius:14px;background:var(--surface-2)}
+.monthly-win-label{display:block;color:var(--muted);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em}
+.monthly-win-card strong{display:block;font-size:16px;margin-top:2px}
+.monthly-win-card small{display:block;color:var(--muted);font-size:11px;margin-top:2px}
+.monthly-win-meter{height:12px;border:1px solid var(--border);border-radius:999px;background:var(--surface);overflow:hidden}
+.monthly-win-meter i{display:block;height:100%;width:0;border-radius:999px;background:var(--good);transition:width .25s ease}
+.field-hint{font-weight:600;text-transform:none;letter-spacing:0;color:var(--muted);font-size:10px}
+
+@media(max-width:700px){
+  .debt-progress-hero{grid-template-columns:1fr;justify-items:center;text-align:center}
+  .debt-progress-summary{width:100%;grid-template-columns:repeat(3,minmax(0,1fr));text-align:left}
+  .debt-progress-message{text-align:center}
+  .debt-progress-accounts{grid-template-columns:1fr}
+  .monthly-win-card{grid-template-columns:1fr}
+}
+@media(max-width:480px){
+  .debt-progress-head{display:block}
+  .debt-progress-head .chip{margin-top:8px}
+  .debt-progress-summary{grid-template-columns:1fr}
+  .debt-progress-message{text-align:left}
+  .debt-progress-ring{width:126px}
+}

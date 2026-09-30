@@ -12,6 +12,16 @@
   const todayISO = `${today.getFullYear()}-${pad(today.getMonth()+1)}-${pad(today.getDate())}`;
   const defaultMonth = `${today.getFullYear()}-${pad(today.getMonth()+1)}`;
 
+  // Baselines from the balances being tracked when debt-progress tracking began.
+  // Once migrated, each debt keeps its own startingBalance in saved data.
+  const STARTING_BALANCE_BASELINES = {
+    "amex plum": 2676.55,
+    "amex gold": 3126.84,
+    "apple card": 3477.86,
+    "discover": 3969.47,
+    "rcbc tuition": 1975.73
+  };
+
   const starter = {
     monthlyIncome: 3640,
     weeklyIncome: 840,
@@ -19,10 +29,10 @@
     emergencyTarget: 1000,
     creditScore: "",
     debts: [
-      {id:1,name:"Amex Plum",balance:2742.55,apr:0,min:66,limit:0,dueDay:"",type:"Charge card"},
-      {id:2,name:"Amex Gold",balance:3112.15,apr:0,min:86,limit:0,dueDay:"",type:"Charge card"},
-      {id:3,name:"Apple Card",balance:3504.35,apr:25.49,min:110,limit:0,dueDay:"",type:"Credit card"},
-      {id:4,name:"Discover",balance:3993.47,apr:23.49,min:115,limit:0,dueDay:"",type:"Credit card"}
+      {id:1,name:"Amex Plum",balance:2742.55,startingBalance:2742.55,apr:0,min:66,limit:0,dueDay:"",type:"Charge card"},
+      {id:2,name:"Amex Gold",balance:3112.15,startingBalance:3112.15,apr:0,min:86,limit:0,dueDay:"",type:"Charge card"},
+      {id:3,name:"Apple Card",balance:3504.35,startingBalance:3504.35,apr:25.49,min:110,limit:0,dueDay:"",type:"Credit card"},
+      {id:4,name:"Discover",balance:3993.47,startingBalance:3993.47,apr:23.49,min:115,limit:0,dueDay:"",type:"Credit card"}
     ],
     assets: [{id:11,name:"Starter savings",balance:100,type:"Savings"}],
     bills: [],
@@ -56,10 +66,19 @@
     merged.weeklyIncome = Number(merged.weeklyIncome) || Math.round((Number(merged.monthlyIncome)||3640)*12/52);
     merged.paychecks = Array.isArray(merged.paychecks) ? merged.paychecks : [];
     merged.transactions = Array.isArray(merged.transactions) ? merged.transactions : [];
-    merged.debts = (Array.isArray(merged.debts) ? merged.debts : structuredClone(starter.debts)).map(d=>({
-      ...d,
-      minimumPayments:Array.isArray(d.minimumPayments) ? d.minimumPayments.filter(x=>x && x.period).map(x=>({period:String(x.period),paidAt:x.paidAt || ""})) : []
-    }));
+    merged.debts = (Array.isArray(merged.debts) ? merged.debts : structuredClone(starter.debts)).map(d=>{
+      const currentBalance=Math.max(0,Number(d.balance)||0);
+      const knownBaseline=STARTING_BALANCE_BASELINES[String(d.name||"").trim().toLowerCase()];
+      const startingBalance=Number.isFinite(Number(d.startingBalance))
+        ? Math.max(0,Number(d.startingBalance))
+        : (Number.isFinite(Number(knownBaseline)) ? Number(knownBaseline) : currentBalance);
+      return {
+        ...d,
+        balance:currentBalance,
+        startingBalance,
+        minimumPayments:Array.isArray(d.minimumPayments) ? d.minimumPayments.filter(x=>x && x.period).map(x=>({period:String(x.period),paidAt:x.paidAt || ""})) : []
+      };
+    });
     merged.bills = (Array.isArray(merged.bills) ? merged.bills : []).map(b=>({
       id:b.id || uid(),
       name:b.name || "Recurring payment",
@@ -118,6 +137,87 @@
   function monthlyPlanned(b){ return Math.max(0,(state.monthlyIncome*(Number(b.monthlyPct)||0)/100) + (Number(b.carry)||0)); }
   function weeklyPlanned(b){ return Math.max(0,state.weeklyIncome*(Number(b.weeklyPct)||0)/100); }
   function totalMonthlyPlanned(){ return state.budget.reduce((s,b)=>s+monthlyPlanned(b),0); }
+
+  function debtProgressRows(){
+    return state.debts.map(d=>{
+      const current=Math.max(0,Number(d.balance)||0);
+      const starting=Math.max(0,Number(d.startingBalance)||0);
+      const delta=starting-current;
+      const paid=Math.max(0,delta);
+      const pct=starting>0 ? clamp((delta/starting)*100,0,100) : (current===0 ? 100 : 0);
+      return {...d,current,starting,delta,paid,pct};
+    });
+  }
+
+  function currentMonthPaymentProgress(){
+    const year=today.getFullYear(), month=today.getMonth(), period=monthKey(year,month);
+    const items=[];
+    state.debts.filter(d=>d.balance>0 && Number(d.min)>0).forEach(d=>{
+      items.push({amount:Math.max(0,Number(d.min)||0),paid:!!debtPaymentFor(d,period)});
+    });
+    state.bills.filter(b=>b.status!=="canceled").forEach(b=>{
+      const due=projectedBillDateForMonth(b,year,month);
+      if(!due) return;
+      const dueISO=occurrenceISO(due);
+      items.push({amount:Math.max(0,Number(b.amount)||0),paid:!!billPaymentFor(b,dueISO)});
+    });
+    return {
+      count:items.length,
+      paidCount:items.filter(x=>x.paid).length,
+      totalAmount:items.reduce((sum,x)=>sum+x.amount,0),
+      paidAmount:items.filter(x=>x.paid).reduce((sum,x)=>sum+x.amount,0)
+    };
+  }
+
+  function renderDebtProgress(){
+    const wrap=$("#debtProgressAccounts");
+    if(!wrap) return;
+    const rows=debtProgressRows();
+    const totalStarting=rows.reduce((sum,d)=>sum+d.starting,0);
+    const totalCurrent=rows.reduce((sum,d)=>sum+d.current,0);
+    const netPaid=Math.max(0,totalStarting-totalCurrent);
+    const pct=totalStarting>0 ? clamp(netPaid/totalStarting*100,0,100) : 0;
+
+    $("#debtProgressPaid").textContent=money(netPaid);
+    $("#debtProgressRemaining").textContent=money(totalCurrent);
+    $("#debtProgressStarting").textContent=money(totalStarting);
+    $("#debtProgressPercent").textContent=`${pct.toFixed(pct<10?1:0)}%`;
+    $("#debtMasterProgressBar").style.width=`${pct}%`;
+    $("#debtProgressRing").style.setProperty("--debt-progress",`${pct*3.6}deg`);
+
+    let message="Your progress will appear after a balance goes down.";
+    if(pct>0 && pct<10) message="Momentum started. Keep stacking balance reductions.";
+    else if(pct>=10 && pct<25) message="You have real momentum now. Keep the line moving.";
+    else if(pct>=25 && pct<50) message="A quarter of the starting debt is already behind you.";
+    else if(pct>=50 && pct<75) message="More progress is visible every time you lower a balance.";
+    else if(pct>=75 && pct<100) message="The finish line is getting close.";
+    else if(pct>=100) message="All tracked starting debt has been paid off.";
+    $("#debtProgressMessage").textContent=message;
+
+    const milestones=[1,5,10,25,50,75,100];
+    const next=milestones.find(x=>x>pct+.0001);
+    if(next){
+      const amountToMilestone=Math.max(0,totalStarting*(next/100)-netPaid);
+      $("#debtProgressMilestone").textContent=`${money(amountToMilestone)} to ${next}%`;
+    }else{
+      $("#debtProgressMilestone").textContent="Debt free";
+    }
+
+    wrap.innerHTML=rows.length ? rows.map(d=>{
+      const changeText=d.delta>0.005 ? `${money(d.delta)} paid down` : d.delta<-.005 ? `${money(Math.abs(d.delta))} above start` : "At starting balance";
+      return `<div class="debt-progress-row ${d.delta<-.005?'is-up':''}">
+        <div class="debt-progress-row-head"><div><strong>${escapeHtml(d.name)}</strong><span>${escapeHtml(changeText)}</span></div><strong>${d.pct.toFixed(d.pct<10?1:0)}%</strong></div>
+        <div class="debt-account-bar"><i style="width:${d.pct}%"></i></div>
+        <div class="debt-progress-row-foot"><span>Started ${money(d.starting)}</span><span>Now ${money(d.current)}</span></div>
+      </div>`;
+    }).join("") : `<div class="empty">Add a debt account to start tracking payoff progress.</div>`;
+
+    const payment=currentMonthPaymentProgress();
+    const paymentPct=payment.count ? clamp(payment.paidCount/payment.count*100,0,100) : 0;
+    $("#monthlyPaymentProgressText").textContent=`${payment.paidCount} of ${payment.count} paid`;
+    $("#monthlyPaymentProgressAmount").textContent=`${money(payment.paidAmount)} of ${money(payment.totalAmount)} scheduled`;
+    $("#monthlyPaymentProgressBar").style.width=`${paymentPct}%`;
+  }
 
   function parseISO(dateLike){
     if(!dateLike) return null;
@@ -381,7 +481,7 @@
 
   function openDebtEdit(id){
     const d=state.debts.find(x=>x.id===id); if(!d) return;
-    $("#editDebtId").value=d.id; $("#editDebtName").value=d.name; $("#editDebtBalance").value=d.balance; $("#editDebtApr").value=d.apr; $("#editDebtMin").value=d.min; $("#editDebtLimit").value=d.limit||""; $("#editDebtDueDay").value=d.dueDay||""; $("#editDebtType").value=d.type;
+    $("#editDebtId").value=d.id; $("#editDebtName").value=d.name; $("#editDebtBalance").value=d.balance; $("#editDebtStartingBalance").value=Number.isFinite(Number(d.startingBalance))?d.startingBalance:d.balance; $("#editDebtApr").value=d.apr; $("#editDebtMin").value=d.min; $("#editDebtLimit").value=d.limit||""; $("#editDebtDueDay").value=d.dueDay||""; $("#editDebtType").value=d.type;
     $("#debtEditDialog").showModal();
   }
 
@@ -805,7 +905,7 @@
   }
 
   function renderAll(){
-    renderMetrics(); renderAllocator(); renderPaycheckEditor(); renderPaychecks(); renderDaily(); renderCalendar(); renderDebts(); renderBudget(); renderTransactions(); renderRules(); renderBills(); renderAccounts(); renderReports();
+    renderMetrics(); renderDebtProgress(); renderAllocator(); renderPaycheckEditor(); renderPaychecks(); renderDaily(); renderCalendar(); renderDebts(); renderBudget(); renderTransactions(); renderRules(); renderBills(); renderAccounts(); renderReports();
   }
 
   function bindForms(){
@@ -828,13 +928,13 @@
 
     $("#debtForm").addEventListener("submit",e=>{
       e.preventDefault(); const name=$("#debtName").value.trim(); const balance=Math.max(0,Number($("#debtBalance").value)||0); if(!name || balance<=0) return;
-      state.debts.push({id:uid(),name,balance,apr:Math.max(0,Number($("#debtApr").value)||0),min:Math.max(0,Number($("#debtMin").value)||0),limit:Math.max(0,Number($("#debtLimit").value)||0),dueDay:$("#debtDueDay").value?clamp($("#debtDueDay").value,1,31):"",type:$("#debtType").value,minimumPayments:[]});
+      state.debts.push({id:uid(),name,balance,startingBalance:balance,apr:Math.max(0,Number($("#debtApr").value)||0),min:Math.max(0,Number($("#debtMin").value)||0),limit:Math.max(0,Number($("#debtLimit").value)||0),dueDay:$("#debtDueDay").value?clamp($("#debtDueDay").value,1,31):"",type:$("#debtType").value,minimumPayments:[]});
       e.target.reset(); $("#debtApr").value=0; $("#debtMin").value=0; save(); renderAll();
     });
 
     $("#debtEditForm").addEventListener("submit",e=>{
       e.preventDefault(); const d=state.debts.find(x=>x.id===Number($("#editDebtId").value)); if(!d) return;
-      d.name=$("#editDebtName").value.trim()||d.name; d.balance=Math.max(0,Number($("#editDebtBalance").value)||0); d.apr=Math.max(0,Number($("#editDebtApr").value)||0); d.min=Math.max(0,Number($("#editDebtMin").value)||0); d.limit=Math.max(0,Number($("#editDebtLimit").value)||0); d.dueDay=$("#editDebtDueDay").value?clamp($("#editDebtDueDay").value,1,31):""; d.type=$("#editDebtType").value; $("#debtEditDialog").close(); save(); renderAll();
+      d.name=$("#editDebtName").value.trim()||d.name; d.balance=Math.max(0,Number($("#editDebtBalance").value)||0); d.startingBalance=Math.max(0,Number($("#editDebtStartingBalance").value)||d.balance); d.apr=Math.max(0,Number($("#editDebtApr").value)||0); d.min=Math.max(0,Number($("#editDebtMin").value)||0); d.limit=Math.max(0,Number($("#editDebtLimit").value)||0); d.dueDay=$("#editDebtDueDay").value?clamp($("#editDebtDueDay").value,1,31):""; d.type=$("#editDebtType").value; $("#debtEditDialog").close(); save(); renderAll();
     });
     ["#debtEditCancel","#debtEditCancelX"].forEach(id=>$(id).addEventListener("click",()=>$("#debtEditDialog").close()));
 

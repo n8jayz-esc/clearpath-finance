@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#111827" />
   <title>ClearPath Finance</title>
-  <link rel="stylesheet" href="styles.css?v=4.2" />
+  <link rel="stylesheet" href="styles.css?v=4.3" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -60,6 +60,41 @@
           <small>Assets minus debt</small>
         </article>
       </div>
+
+      <article class="panel debt-progress-panel">
+        <div class="panel-head debt-progress-head">
+          <div>
+            <p class="section-kicker">Keep the momentum</p>
+            <h2>Debt freedom progress</h2>
+            <p>Every balance reduction counts automatically from the balance you started with. Marking payments paid in Bills &amp; Goals also updates this dashboard.</p>
+          </div>
+          <span class="chip good" id="debtProgressMilestone">Next milestone</span>
+        </div>
+
+        <div class="debt-progress-hero">
+          <div class="debt-progress-ring" id="debtProgressRing" aria-label="Debt payoff progress">
+            <div><strong id="debtProgressPercent">0%</strong><span>paid off</span></div>
+          </div>
+          <div class="debt-progress-summary">
+            <div class="debt-progress-stat"><span>Debt paid down</span><strong id="debtProgressPaid">$0</strong></div>
+            <div class="debt-progress-stat"><span>Remaining</span><strong id="debtProgressRemaining">$0</strong></div>
+            <div class="debt-progress-stat"><span>Starting debt</span><strong id="debtProgressStarting">$0</strong></div>
+            <p class="debt-progress-message" id="debtProgressMessage">Your progress will appear after a balance goes down.</p>
+          </div>
+        </div>
+
+        <div class="debt-master-progress" aria-hidden="true"><i id="debtMasterProgressBar"></i></div>
+        <div id="debtProgressAccounts" class="debt-progress-accounts top-gap"></div>
+
+        <div class="monthly-win-card top-gap">
+          <div>
+            <span class="monthly-win-label">This month's completed payments</span>
+            <strong id="monthlyPaymentProgressText">0 of 0 paid</strong>
+            <small id="monthlyPaymentProgressAmount">$0 of $0 scheduled</small>
+          </div>
+          <div class="monthly-win-meter"><i id="monthlyPaymentProgressBar"></i></div>
+        </div>
+      </article>
 
       <div class="two-col">
         <article class="panel">
@@ -729,6 +764,7 @@
       <div class="form-grid two">
         <label>Name<input id="editDebtName" required /></label>
         <label>Current balance<input id="editDebtBalance" required type="number" min="0" step="0.01" /></label>
+        <label>Starting balance <span class="field-hint">progress baseline</span><input id="editDebtStartingBalance" type="number" min="0" step="0.01" /></label>
         <label>APR %<input id="editDebtApr" type="number" min="0" step="0.01" /></label>
         <label>Minimum / month<input id="editDebtMin" type="number" min="0" step="0.01" /></label>
         <label>Credit limit<input id="editDebtLimit" type="number" min="0" step="0.01" /></label>
@@ -781,7 +817,7 @@
     </form>
   </dialog>
 
-  <script src="app.js?v=4.2"></script>
+  <script src="app.js?v=4.3"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
