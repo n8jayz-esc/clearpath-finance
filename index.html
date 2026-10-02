@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#111827" />
   <title>ClearPath Finance</title>
-  <link rel="stylesheet" href="styles.css?v=4.3" />
+  <link rel="stylesheet" href="styles.css?v=4.4" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -280,6 +280,19 @@
       <article class="panel">
         <div class="panel-head">
           <div>
+            <p class="section-kicker">Automatic interest</p>
+            <h2>Interest posting tracker</h2>
+            <p>Accounts with an APR can automatically add an estimated monthly interest charge on their configured posting day. ClearPath checks when the app opens, returns to the foreground, and while it stays open.</p>
+          </div>
+          <span class="chip" id="interestAutoStatus">—</span>
+        </div>
+        <div id="interestAutomationList" class="interest-auto-list"></div>
+        <p class="note">Estimated interest uses the current balance × APR ÷ 12. Your card issuer can calculate a slightly different amount from average daily balance, purchases, payments, fees, and the exact statement cycle. If the statement amount differs, edit the account balance to match the issuer.</p>
+      </article>
+
+      <article class="panel">
+        <div class="panel-head">
+          <div>
             <p class="section-kicker">Add account</p>
             <h2>New card or loan</h2>
           </div>
@@ -292,6 +305,8 @@
             <label>Minimum / month<input id="debtMin" type="number" min="0" step="0.01" value="0" /></label>
             <label>Credit limit<input id="debtLimit" type="number" min="0" step="0.01" placeholder="Optional" /></label>
             <label>Due day<input id="debtDueDay" type="number" min="1" max="31" placeholder="Optional" /></label>
+            <label>Interest posting day <span class="field-hint">day charge appears</span><input id="debtInterestPostDay" type="number" min="1" max="31" placeholder="Auto suggested" /></label>
+            <label class="auto-interest-toggle"><span>Automatic interest</span><span class="toggle-inline"><input id="debtAutoInterest" type="checkbox" checked /> Add estimated interest each cycle</span></label>
             <label>Type
               <select id="debtType">
                 <option>Credit card</option>
@@ -769,6 +784,8 @@
         <label>Minimum / month<input id="editDebtMin" type="number" min="0" step="0.01" /></label>
         <label>Credit limit<input id="editDebtLimit" type="number" min="0" step="0.01" /></label>
         <label>Due day<input id="editDebtDueDay" type="number" min="1" max="31" /></label>
+        <label>Interest posting day <span class="field-hint">day charge appears</span><input id="editDebtInterestPostDay" type="number" min="1" max="31" /></label>
+        <label class="auto-interest-toggle"><span>Automatic interest</span><span class="toggle-inline"><input id="editDebtAutoInterest" type="checkbox" /> Add estimated interest each cycle</span></label>
         <label>Type
           <select id="editDebtType">
             <option>Credit card</option>
@@ -817,7 +834,7 @@
     </form>
   </dialog>
 
-  <script src="app.js?v=4.3"></script>
+  <script src="app.js?v=4.4"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {

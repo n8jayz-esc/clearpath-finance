@@ -11,6 +11,22 @@
   const today = new Date();
   const todayISO = `${today.getFullYear()}-${pad(today.getMonth()+1)}-${pad(today.getDate())}`;
   const defaultMonth = `${today.getFullYear()}-${pad(today.getMonth()+1)}`;
+  const roundCents = (n) => Math.round((Number(n)||0)*100)/100;
+  const liveTodayISO = () => { const d=new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; };
+
+  function inferredInterestPostDay(d){
+    const explicit=Number(d?.interestPostDay);
+    if(Number.isFinite(explicit) && explicit>=1) return clamp(explicit,1,31);
+    const name=String(d?.name||"").trim().toLowerCase();
+    // Apple Card commonly shows the prior cycle's interest at the turn of the month in this user's data.
+    if(name.includes("apple")) return 1;
+    const due=Number(d?.dueDay);
+    if(Number.isFinite(due) && due>=1){
+      // Default other cards to the next calendar day. Users can edit this to the issuer's real statement/interest day.
+      return due>=28 ? 1 : clamp(due+1,1,31);
+    }
+    return 1;
+  }
 
   // Baselines from the balances being tracked when debt-progress tracking began.
   // Once migrated, each debt keeps its own startingBalance in saved data.
@@ -29,10 +45,10 @@
     emergencyTarget: 1000,
     creditScore: "",
     debts: [
-      {id:1,name:"Amex Plum",balance:2742.55,startingBalance:2742.55,apr:0,min:66,limit:0,dueDay:"",type:"Charge card"},
-      {id:2,name:"Amex Gold",balance:3112.15,startingBalance:3112.15,apr:0,min:86,limit:0,dueDay:"",type:"Charge card"},
-      {id:3,name:"Apple Card",balance:3504.35,startingBalance:3504.35,apr:25.49,min:110,limit:0,dueDay:"",type:"Credit card"},
-      {id:4,name:"Discover",balance:3993.47,startingBalance:3993.47,apr:23.49,min:115,limit:0,dueDay:"",type:"Credit card"}
+      {id:1,name:"Amex Plum",balance:2742.55,startingBalance:2742.55,apr:0,min:66,limit:0,dueDay:"",type:"Charge card",autoInterest:false,interestPostDay:1,interestAutomationStart:todayISO,interestCharges:[]},
+      {id:2,name:"Amex Gold",balance:3112.15,startingBalance:3112.15,apr:0,min:86,limit:0,dueDay:"",type:"Charge card",autoInterest:false,interestPostDay:1,interestAutomationStart:todayISO,interestCharges:[]},
+      {id:3,name:"Apple Card",balance:3504.35,startingBalance:3504.35,apr:25.49,min:110,limit:0,dueDay:"",type:"Credit card",autoInterest:true,interestPostDay:1,interestAutomationStart:todayISO,interestCharges:[]},
+      {id:4,name:"Discover",balance:3993.47,startingBalance:3993.47,apr:23.49,min:115,limit:0,dueDay:"",type:"Credit card",autoInterest:true,interestPostDay:1,interestAutomationStart:todayISO,interestCharges:[]}
     ],
     assets: [{id:11,name:"Starter savings",balance:100,type:"Savings"}],
     bills: [],
@@ -72,10 +88,22 @@
       const startingBalance=Number.isFinite(Number(d.startingBalance))
         ? Math.max(0,Number(d.startingBalance))
         : (Number.isFinite(Number(knownBaseline)) ? Number(knownBaseline) : currentBalance);
+      const apr=Math.max(0,Number(d.apr)||0);
+      const autoInterest=typeof d.autoInterest === "boolean" ? d.autoInterest : apr>0;
+      const interestPostDay=inferredInterestPostDay(d);
+      const interestAutomationStart=/^\d{4}-\d{2}-\d{2}$/.test(String(d.interestAutomationStart||"")) ? String(d.interestAutomationStart) : todayISO;
+      const interestCharges=Array.isArray(d.interestCharges) ? d.interestCharges.filter(x=>x && x.period).map(x=>({
+        id:x.id || uid(), period:String(x.period), postedDate:String(x.postedDate||""), amount:Math.max(0,Number(x.amount)||0), apr:Math.max(0,Number(x.apr)||0), balanceBefore:Math.max(0,Number(x.balanceBefore)||0), balanceAfter:Math.max(0,Number(x.balanceAfter)||0), method:x.method || "estimated-monthly"
+      })) : [];
       return {
         ...d,
         balance:currentBalance,
         startingBalance,
+        apr,
+        autoInterest,
+        interestPostDay,
+        interestAutomationStart,
+        interestCharges,
         minimumPayments:Array.isArray(d.minimumPayments) ? d.minimumPayments.filter(x=>x && x.period).map(x=>({period:String(x.period),paidAt:x.paidAt || ""})) : []
       };
     });
@@ -137,6 +165,84 @@
   function monthlyPlanned(b){ return Math.max(0,(state.monthlyIncome*(Number(b.monthlyPct)||0)/100) + (Number(b.carry)||0)); }
   function weeklyPlanned(b){ return Math.max(0,state.weeklyIncome*(Number(b.weeklyPct)||0)/100); }
   function totalMonthlyPlanned(){ return state.budget.reduce((s,b)=>s+monthlyPlanned(b),0); }
+
+  function scheduledInterestDate(year,monthIndex,day){
+    const lastDay=new Date(year,monthIndex+1,0).getDate();
+    return new Date(year,monthIndex,Math.min(clamp(day,1,31),lastDay),0,0,0);
+  }
+
+  function interestPeriodForDate(d){ return `${d.getFullYear()}-${pad(d.getMonth()+1)}`; }
+
+  function nextInterestDateForDebt(d,fromDate=new Date()){
+    if(!(d.autoInterest && Number(d.apr)>0 && Number(d.balance)>0)) return null;
+    const day=inferredInterestPostDay(d);
+    let candidate=scheduledInterestDate(fromDate.getFullYear(),fromDate.getMonth(),day);
+    if(candidate < new Date(fromDate.getFullYear(),fromDate.getMonth(),fromDate.getDate(),0,0,0)){
+      candidate=scheduledInterestDate(fromDate.getFullYear(),fromDate.getMonth()+1,day);
+    }
+    return candidate;
+  }
+
+  function estimateMonthlyInterest(d){
+    return roundCents(Math.max(0,Number(d.balance)||0) * (Math.max(0,Number(d.apr)||0)/100) / 12);
+  }
+
+  function processAutomaticInterest(){
+    const now=new Date();
+    let changed=false;
+    const posted=[];
+    state.debts.forEach(d=>{
+      if(!(d.autoInterest && Number(d.apr)>0 && Number(d.balance)>0)) return;
+      d.interestCharges=Array.isArray(d.interestCharges) ? d.interestCharges : [];
+      const start=parseISO(d.interestAutomationStart) || now;
+      // Never retroactively charge a cycle that happened before this version began tracking it.
+      const cursor=new Date(start.getFullYear(),start.getMonth(),1,12,0,0);
+      const end=new Date(now.getFullYear(),now.getMonth(),1,12,0,0);
+      let safety=0;
+      while(cursor<=end && safety<36){
+        const postDate=scheduledInterestDate(cursor.getFullYear(),cursor.getMonth(),inferredInterestPostDay(d));
+        const period=interestPeriodForDate(postDate);
+        const already=d.interestCharges.some(x=>x.period===period);
+        if(postDate>start && postDate<=now && !already){
+          const amount=estimateMonthlyInterest(d);
+          if(amount>0){
+            const before=roundCents(d.balance);
+            d.balance=roundCents(before+amount);
+            d.interestCharges.push({id:uid(),period,postedDate:toISODate(postDate),amount,apr:Number(d.apr)||0,balanceBefore:before,balanceAfter:d.balance,method:"estimated-monthly"});
+            posted.push({name:d.name,amount,postedDate:toISODate(postDate)});
+            changed=true;
+          }
+        }
+        cursor.setMonth(cursor.getMonth()+1); safety++;
+      }
+    });
+    if(changed){
+      state.lastInterestCheckAt=new Date().toISOString();
+      save();
+    }else{
+      state.lastInterestCheckAt=new Date().toISOString();
+      localStorage.setItem(STORAGE_KEY,JSON.stringify(state));
+    }
+    return posted;
+  }
+
+  function renderInterestAutomation(){
+    const wrap=$("#interestAutomationList");
+    const status=$("#interestAutoStatus");
+    if(!wrap || !status) return;
+    const candidates=state.debts.filter(d=>Number(d.apr)>0 || d.autoInterest);
+    const enabled=candidates.filter(d=>d.autoInterest && Number(d.apr)>0).length;
+    status.textContent=`${enabled} account${enabled===1?"":"s"} enabled`;
+    if(!candidates.length){ wrap.innerHTML=`<div class="empty">No interest-bearing debt accounts yet.</div>`; return; }
+    wrap.innerHTML=candidates.map(d=>{
+      const next=nextInterestDateForDebt(d);
+      const nextText=next ? next.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}) : "Off";
+      const est=estimateMonthlyInterest(d);
+      const last=[...(d.interestCharges||[])].sort((a,b)=>String(b.postedDate).localeCompare(String(a.postedDate)))[0];
+      const enabledNow=d.autoInterest && Number(d.apr)>0;
+      return `<div class="interest-auto-card ${enabledNow?"":"is-off"}"><div class="interest-auto-main"><strong>${escapeHtml(d.name)}</strong><span>${Number(d.apr||0).toFixed(2)}% APR · payment due day ${d.dueDay||"—"} · interest posts day ${inferredInterestPostDay(d)}</span><span>${last?`Last automatic charge ${money(last.amount)} on ${escapeHtml(last.postedDate)}`:`Automation starts with the next scheduled posting day.`}</span></div><div class="interest-auto-side"><strong>${enabledNow?money(est):"Off"}</strong><span>${enabledNow?`next estimate · ${escapeHtml(nextText)}`:"automatic interest disabled"}</span></div></div>`;
+    }).join("");
+  }
 
   function debtProgressRows(){
     return state.debts.map(d=>{
@@ -468,7 +574,8 @@
     const sorted=[...state.debts].sort((a,b)=>a.balance-b.balance);
     $("#debtList").innerHTML = sorted.length ? sorted.map((d,i)=>{
       const util=d.limit>0 ? clamp(d.balance/d.limit*100,0,999) : null;
-      return `<div class="item"><span class="chip">${i+1}</span><div class="item-main"><strong>${escapeHtml(d.name)}</strong><span>${escapeHtml(d.type)} · ${Number(d.apr).toFixed(2)}% APR · ${money(d.min)}/mo minimum${d.dueDay?` · due day ${d.dueDay}`:""}</span>${util!==null?`<span>${util.toFixed(1)}% utilization</span>`:""}</div><div class="item-money">${money(d.balance)}</div><button class="secondary" data-edit-debt="${d.id}" type="button">Edit</button><button class="icon-button" data-delete-debt="${d.id}" aria-label="Delete ${escapeHtml(d.name)}">×</button></div>`;
+      const interestInfo=Number(d.apr)>0 ? `<span>${d.autoInterest?`Auto interest · posts day ${inferredInterestPostDay(d)} · est. ${money(estimateMonthlyInterest(d))}/cycle`:`Automatic interest off`}</span>` : "";
+      return `<div class="item"><span class="chip">${i+1}</span><div class="item-main"><strong>${escapeHtml(d.name)}</strong><span>${escapeHtml(d.type)} · ${Number(d.apr).toFixed(2)}% APR · ${money(d.min)}/mo minimum${d.dueDay?` · due day ${d.dueDay}`:""}</span>${interestInfo}${util!==null?`<span>${util.toFixed(1)}% utilization</span>`:""}</div><div class="item-money">${money(d.balance)}</div><button class="secondary" data-edit-debt="${d.id}" type="button">Edit</button><button class="icon-button" data-delete-debt="${d.id}" aria-label="Delete ${escapeHtml(d.name)}">×</button></div>`;
     }).join("") : `<div class="empty">No debts added.</div>`;
     $$('[data-edit-debt]').forEach(btn=>btn.addEventListener('click',()=>openDebtEdit(Number(btn.dataset.editDebt))));
     $$('[data-delete-debt]').forEach(btn=>btn.addEventListener('click',()=>{
@@ -481,7 +588,7 @@
 
   function openDebtEdit(id){
     const d=state.debts.find(x=>x.id===id); if(!d) return;
-    $("#editDebtId").value=d.id; $("#editDebtName").value=d.name; $("#editDebtBalance").value=d.balance; $("#editDebtStartingBalance").value=Number.isFinite(Number(d.startingBalance))?d.startingBalance:d.balance; $("#editDebtApr").value=d.apr; $("#editDebtMin").value=d.min; $("#editDebtLimit").value=d.limit||""; $("#editDebtDueDay").value=d.dueDay||""; $("#editDebtType").value=d.type;
+    $("#editDebtId").value=d.id; $("#editDebtName").value=d.name; $("#editDebtBalance").value=d.balance; $("#editDebtStartingBalance").value=Number.isFinite(Number(d.startingBalance))?d.startingBalance:d.balance; $("#editDebtApr").value=d.apr; $("#editDebtMin").value=d.min; $("#editDebtLimit").value=d.limit||""; $("#editDebtDueDay").value=d.dueDay||""; $("#editDebtInterestPostDay").value=inferredInterestPostDay(d); $("#editDebtAutoInterest").checked=!!d.autoInterest; $("#editDebtType").value=d.type;
     $("#debtEditDialog").showModal();
   }
 
@@ -905,7 +1012,7 @@
   }
 
   function renderAll(){
-    renderMetrics(); renderDebtProgress(); renderAllocator(); renderPaycheckEditor(); renderPaychecks(); renderDaily(); renderCalendar(); renderDebts(); renderBudget(); renderTransactions(); renderRules(); renderBills(); renderAccounts(); renderReports();
+    renderMetrics(); renderDebtProgress(); renderAllocator(); renderPaycheckEditor(); renderPaychecks(); renderDaily(); renderCalendar(); renderDebts(); renderInterestAutomation(); renderBudget(); renderTransactions(); renderRules(); renderBills(); renderAccounts(); renderReports();
   }
 
   function bindForms(){
@@ -928,13 +1035,16 @@
 
     $("#debtForm").addEventListener("submit",e=>{
       e.preventDefault(); const name=$("#debtName").value.trim(); const balance=Math.max(0,Number($("#debtBalance").value)||0); if(!name || balance<=0) return;
-      state.debts.push({id:uid(),name,balance,startingBalance:balance,apr:Math.max(0,Number($("#debtApr").value)||0),min:Math.max(0,Number($("#debtMin").value)||0),limit:Math.max(0,Number($("#debtLimit").value)||0),dueDay:$("#debtDueDay").value?clamp($("#debtDueDay").value,1,31):"",type:$("#debtType").value,minimumPayments:[]});
-      e.target.reset(); $("#debtApr").value=0; $("#debtMin").value=0; save(); renderAll();
+      const apr=Math.max(0,Number($("#debtApr").value)||0);
+      const dueDay=$("#debtDueDay").value?clamp($("#debtDueDay").value,1,31):"";
+      const postDay=$("#debtInterestPostDay").value?clamp($("#debtInterestPostDay").value,1,31):inferredInterestPostDay({name,dueDay});
+      state.debts.push({id:uid(),name,balance,startingBalance:balance,apr,min:Math.max(0,Number($("#debtMin").value)||0),limit:Math.max(0,Number($("#debtLimit").value)||0),dueDay,interestPostDay:postDay,autoInterest:!!$("#debtAutoInterest").checked && apr>0,interestAutomationStart:liveTodayISO(),interestCharges:[],type:$("#debtType").value,minimumPayments:[]});
+      e.target.reset(); $("#debtApr").value=0; $("#debtMin").value=0; $("#debtAutoInterest").checked=true; save(); renderAll();
     });
 
     $("#debtEditForm").addEventListener("submit",e=>{
       e.preventDefault(); const d=state.debts.find(x=>x.id===Number($("#editDebtId").value)); if(!d) return;
-      d.name=$("#editDebtName").value.trim()||d.name; d.balance=Math.max(0,Number($("#editDebtBalance").value)||0); d.startingBalance=Math.max(0,Number($("#editDebtStartingBalance").value)||d.balance); d.apr=Math.max(0,Number($("#editDebtApr").value)||0); d.min=Math.max(0,Number($("#editDebtMin").value)||0); d.limit=Math.max(0,Number($("#editDebtLimit").value)||0); d.dueDay=$("#editDebtDueDay").value?clamp($("#editDebtDueDay").value,1,31):""; d.type=$("#editDebtType").value; $("#debtEditDialog").close(); save(); renderAll();
+      d.name=$("#editDebtName").value.trim()||d.name; d.balance=Math.max(0,Number($("#editDebtBalance").value)||0); d.startingBalance=Math.max(0,Number($("#editDebtStartingBalance").value)||d.balance); d.apr=Math.max(0,Number($("#editDebtApr").value)||0); d.min=Math.max(0,Number($("#editDebtMin").value)||0); d.limit=Math.max(0,Number($("#editDebtLimit").value)||0); d.dueDay=$("#editDebtDueDay").value?clamp($("#editDebtDueDay").value,1,31):""; d.interestPostDay=$("#editDebtInterestPostDay").value?clamp($("#editDebtInterestPostDay").value,1,31):inferredInterestPostDay(d); d.autoInterest=!!$("#editDebtAutoInterest").checked && d.apr>0; d.interestAutomationStart=d.interestAutomationStart||liveTodayISO(); d.interestCharges=Array.isArray(d.interestCharges)?d.interestCharges:[]; d.type=$("#editDebtType").value; $("#debtEditDialog").close(); save(); renderAll();
     });
     ["#debtEditCancel","#debtEditCancelX"].forEach(id=>$(id).addEventListener("click",()=>$("#debtEditDialog").close()));
 
@@ -982,5 +1092,14 @@
   $("#billDueDate").value=todayISO;
   $("#reportWeekDate").value=reportWeekISO;
   bindForms();
+  processAutomaticInterest();
   renderAll();
+
+  function interestAutomationTick(){
+    const posted=processAutomaticInterest();
+    if(posted.length) renderAll();
+  }
+  window.addEventListener("focus",interestAutomationTick);
+  document.addEventListener("visibilitychange",()=>{ if(!document.hidden) interestAutomationTick(); });
+  setInterval(interestAutomationTick,5*60*1000);
 })();
