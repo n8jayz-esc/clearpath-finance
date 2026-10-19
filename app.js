@@ -81,7 +81,16 @@
     const merged = {...structuredClone(starter), ...(raw || {})};
     merged.weeklyIncome = Number(merged.weeklyIncome) || Math.round((Number(merged.monthlyIncome)||3640)*12/52);
     merged.paychecks = Array.isArray(merged.paychecks) ? merged.paychecks : [];
-    merged.transactions = Array.isArray(merged.transactions) ? merged.transactions : [];
+    merged.transactions = (Array.isArray(merged.transactions) ? merged.transactions : []).map(t=>{
+      const linkedId=Number(t.debtAccountId);
+      const linkedEffect=Number(t.debtBalanceEffect);
+      return {
+        ...t,
+        debtAccountId:Number.isFinite(linkedId) && linkedId>0 ? linkedId : null,
+        debtAccountName:t.debtAccountName ? String(t.debtAccountName) : "",
+        debtBalanceEffect:Number.isFinite(linkedEffect) ? roundCents(linkedEffect) : 0
+      };
+    });
     merged.debts = (Array.isArray(merged.debts) ? merged.debts : structuredClone(starter.debts)).map(d=>{
       const currentBalance=Math.max(0,Number(d.balance)||0);
       const knownBaseline=STARTING_BALANCE_BASELINES[String(d.name||"").trim().toLowerCase()];
@@ -689,18 +698,75 @@
     renderReceiptItems();
   }
 
-  function addTransaction({name,amount,type="expense",category,tag="",dateISO=todayISO,receiptId=""}){
+  function debtForTransaction(t){
+    const id=Number(t?.debtAccountId);
+    if(Number.isFinite(id) && id>0){
+      const found=state.debts.find(d=>Number(d.id)===id);
+      if(found) return found;
+    }
+    return null;
+  }
+
+  function applyDebtBalanceEffect(debt,effect){
+    if(!debt || !Number.isFinite(Number(effect)) || Math.abs(Number(effect))<0.005) return 0;
+    const before=Math.max(0,Number(debt.balance)||0);
+    let actual=roundCents(Number(effect));
+    if(actual<0) actual=-Math.min(before,Math.abs(actual));
+    debt.balance=roundCents(Math.max(0,before+actual));
+    return actual;
+  }
+
+  function addTransaction({name,amount,type="expense",category,tag="",dateISO=todayISO,receiptId="",debtAccountId=null}){
     const value=Math.max(0,Number(amount)||0); if(!name || value<=0) return null;
     const d=parseISO(dateISO)||new Date();
-    const tx={id:uid(),name,amount:value,type,category,tag,dateISO:`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`,date:d.toLocaleDateString(),receiptId};
+    const linkedDebt=state.debts.find(x=>Number(x.id)===Number(debtAccountId)) || null;
+    let debtBalanceEffect=0;
+    if(linkedDebt && type==="expense") debtBalanceEffect=applyDebtBalanceEffect(linkedDebt,value);
+    else if(linkedDebt && type==="debt") debtBalanceEffect=applyDebtBalanceEffect(linkedDebt,-value);
+    const tx={
+      id:uid(),name,amount:value,type,category,tag,
+      dateISO:`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`,
+      date:d.toLocaleDateString(),receiptId,
+      debtAccountId:linkedDebt ? Number(linkedDebt.id) : null,
+      debtAccountName:linkedDebt ? linkedDebt.name : "",
+      debtBalanceEffect:roundCents(debtBalanceEffect)
+    };
     state.transactions.push(tx); return tx;
+  }
+
+  function reverseTransactionDebtEffect(t){
+    const effect=Number(t?.debtBalanceEffect)||0;
+    if(Math.abs(effect)<0.005) return;
+    const debt=debtForTransaction(t);
+    if(!debt) return;
+    debt.balance=roundCents(Math.max(0,(Number(debt.balance)||0)-effect));
+  }
+
+  function transactionDebtDetail(t){
+    const effect=Number(t?.debtBalanceEffect)||0;
+    const name=t?.debtAccountName || debtForTransaction(t)?.name || "";
+    if(!name || Math.abs(effect)<0.005) return "";
+    const direction=effect>0 ? "+" : "−";
+    const verb=effect>0 ? "balance added" : "balance reduced";
+    return `${name} · ${direction}${money(Math.abs(effect))} ${verb}`;
   }
 
   function renderTransactions(){
     const search=($("#txSearch").value||"").trim().toLowerCase();
-    const list=[...state.transactions].reverse().filter(t=>!search || `${t.name} ${t.category} ${t.tag||""}`.toLowerCase().includes(search));
-    $("#transactionList").innerHTML=list.length ? list.map(t=>`<div class="item"><span class="dot"></span><div class="item-main"><strong>${escapeHtml(t.name)}</strong><span>${escapeHtml(t.category)}${t.tag?` · #${escapeHtml(t.tag)}`:""} · ${escapeHtml(t.date || t.dateISO || "")}</span></div><div class="item-money ${t.type==="income"?"good":"bad"}">${t.type==="income"?"+":"-"}${money(t.amount)}</div><button class="icon-button" data-delete-tx="${t.id}" aria-label="Delete transaction">×</button></div>`).join("") : `<div class="empty">No matching transactions.</div>`;
-    $$('[data-delete-tx]').forEach(btn=>btn.addEventListener('click',()=>{ state.transactions=state.transactions.filter(t=>t.id!==Number(btn.dataset.deleteTx)); save(); renderAll(); }));
+    const list=[...state.transactions].reverse().filter(t=>!search || `${t.name} ${t.category} ${t.tag||""} ${t.debtAccountName||""}`.toLowerCase().includes(search));
+    $("#transactionList").innerHTML=list.length ? list.map(t=>{
+      const debtDetail=transactionDebtDetail(t);
+      return `<div class="item"><span class="dot"></span><div class="item-main"><strong>${escapeHtml(t.name)}</strong><span>${escapeHtml(t.category)}${t.tag?` · #${escapeHtml(t.tag)}`:""} · ${escapeHtml(t.date || t.dateISO || "")}</span>${debtDetail?`<span class="tx-debt-link">${escapeHtml(debtDetail)}</span>`:""}</div><div class="item-money ${t.type==="income"?"good":"bad"}">${t.type==="income"?"+":"-"}${money(t.amount)}</div><button class="icon-button" data-delete-tx="${t.id}" aria-label="Delete transaction">×</button></div>`;
+    }).join("") : `<div class="empty">No matching transactions.</div>`;
+    $$('[data-delete-tx]').forEach(btn=>btn.addEventListener('click',()=>{
+      const tx=state.transactions.find(t=>Number(t.id)===Number(btn.dataset.deleteTx));
+      if(!tx) return;
+      const linked=Math.abs(Number(tx.debtBalanceEffect)||0)>=0.005;
+      if(linked && !confirm(`Delete this transaction and reverse its ${tx.debtAccountName || "linked debt"} balance change?`)) return;
+      reverseTransactionDebtEffect(tx);
+      state.transactions=state.transactions.filter(t=>Number(t.id)!==Number(btn.dataset.deleteTx));
+      save(); renderAll();
+    }));
   }
 
   function renderRules(){
@@ -1008,7 +1074,32 @@
   }
 
   function refreshDebtSelect(){
-    const el=$("#txDebt"); const current=el.value; el.innerHTML=`<option value="">Not a debt payment</option>`+state.debts.map(d=>`<option value="${d.id}">${escapeHtml(d.name)}</option>`).join(""); if([...el.options].some(o=>o.value===current)) el.value=current;
+    const el=$("#txDebt"); if(!el) return;
+    const current=el.value;
+    el.innerHTML=`<option value="">No linked debt account</option>`+state.debts.map(d=>`<option value="${d.id}">${escapeHtml(d.name)} · ${money(d.balance)}</option>`).join("");
+    if([...el.options].some(o=>o.value===current)) el.value=current;
+    syncTransactionDebtUI();
+  }
+
+  function syncTransactionDebtUI(){
+    const type=$("#txType")?.value || "expense";
+    const debt=$("#txDebt");
+    const label=$("#txDebtLabel");
+    const hint=$("#txDebtHint");
+    if(!debt || !label || !hint) return;
+    const disabled=type==="income" || type==="transfer";
+    debt.disabled=disabled;
+    if(disabled) debt.value="";
+    if(type==="expense"){
+      label.childNodes[0].nodeValue="Debt account / card used ";
+      hint.textContent="If this expense was charged to a tracked card, choose it above. The purchase will increase that debt balance automatically.";
+    }else if(type==="debt"){
+      label.childNodes[0].nodeValue="Debt account being paid ";
+      hint.textContent="Choose the debt you are paying. The payment will decrease that account balance automatically.";
+    }else{
+      label.childNodes[0].nodeValue="Debt account ";
+      hint.textContent="Income and transfers do not change a debt balance.";
+    }
   }
 
   function renderAll(){
@@ -1051,10 +1142,11 @@
     $("#transactionForm").addEventListener("submit",e=>{
       e.preventDefault(); const name=$("#txName").value.trim(); const amount=Math.max(0,Number($("#txAmount").value)||0); if(!name || amount<=0) return;
       let type=$("#txType").value, category=$("#txCategory").value; const matched=state.rules.find(r=>name.toLowerCase().includes(r.contains.toLowerCase())); if(matched) category=matched.category; if(category==="Income") type="income";
-      addTransaction({name,amount,type,category,tag:$("#txTag").value.trim(),dateISO:todayISO});
-      if(type==="debt" && $("#txDebt").value){ const d=state.debts.find(x=>x.id===Number($("#txDebt").value)); if(d) d.balance=Math.max(0,d.balance-amount); }
+      const debtAccountId=(type==="expense" || type==="debt") && $("#txDebt").value ? Number($("#txDebt").value) : null;
+      addTransaction({name,amount,type,category,tag:$("#txTag").value.trim(),dateISO:todayISO,debtAccountId});
       e.target.reset(); save(); renderAll();
     });
+    $("#txType").addEventListener("change",syncTransactionDebtUI);
     $("#txSearch").addEventListener("input",renderTransactions);
 
     $("#ruleForm").addEventListener("submit",e=>{ e.preventDefault(); const contains=$("#ruleContains").value.trim(); if(!contains) return; state.rules.push({id:uid(),contains,category:$("#ruleCategory").value}); e.target.reset(); save(); renderAll(); });
